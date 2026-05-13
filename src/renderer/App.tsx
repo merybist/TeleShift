@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 const { ipcRenderer } = require('electron')
-import { QrCode, LayoutGrid, Terminal, ShieldCheck, Github } from 'lucide-react'
+import { QrCode, LayoutGrid, Terminal, ShieldCheck, Github, Download, X, Bell } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import fluttershyImg from '../../resources/avatar.jpg'
 import ConnectionPage from './pages/ConnectionPage'
@@ -162,10 +162,119 @@ function WarningModal() {
   )
 }
 
+function UpdateModal() {
+  const [update, setUpdate] = useState<any>(null)
+  const [show, setShow] = useState(false)
+
+  useEffect(() => {
+    checkForUpdate()
+  }, [])
+
+  async function checkForUpdate() {
+    try {
+      const result = await ipcRenderer.invoke('check-for-update')
+      if (!result) return
+
+      // Check "don't remind" preference
+      const dismissed = localStorage.getItem('update_dismissed_version')
+      if (dismissed === result.version) return
+
+      setUpdate(result)
+      setShow(true)
+      // Show the hidden window so user can see the update modal
+      ipcRenderer.send('show-window')
+    } catch {}
+  }
+
+  if (!show || !update) return null
+
+  const handleUpdate = () => {
+    ipcRenderer.invoke('open-download-url', update.downloadUrl)
+    setShow(false)
+  }
+
+  const handleLater = () => {
+    setShow(false)
+  }
+
+  const handleNever = () => {
+    localStorage.setItem('update_dismissed_version', update.version)
+    setShow(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="max-w-md w-full bg-gray-900 border border-gray-700 p-8 rounded-3xl shadow-2xl relative overflow-hidden"
+      >
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-emerald-400" />
+        
+        <button onClick={handleLater} className="absolute top-4 right-4 p-2 text-gray-500 hover:text-white transition-colors">
+          <X size={20} />
+        </button>
+
+        <div className="flex items-center gap-4 mb-6">
+          <div className="w-12 h-12 bg-green-500/20 rounded-2xl flex items-center justify-center shrink-0 border border-green-500/30">
+            <Bell size={24} className="text-green-400" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white">Доступне оновлення!</h2>
+            <p className="text-gray-400 text-sm">{update.releaseName}</p>
+          </div>
+        </div>
+
+        <div className="bg-gray-800/60 rounded-2xl p-4 mb-6 border border-gray-700/50">
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-gray-400 text-sm">Поточна версія</span>
+            <code className="text-red-400 font-mono text-sm bg-red-500/10 px-2 py-1 rounded">{update.currentVersion}</code>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-400 text-sm">Нова версія</span>
+            <code className="text-green-400 font-mono text-sm bg-green-500/10 px-2 py-1 rounded">{update.version}</code>
+          </div>
+        </div>
+
+        {update.releaseNotes && (
+          <div className="text-gray-400 text-sm mb-6 max-h-24 overflow-y-auto bg-gray-800/30 rounded-xl p-3 border border-gray-700/30">
+            {update.releaseNotes.slice(0, 200)}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={handleUpdate}
+            className="w-full py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-green-500/20 flex items-center justify-center gap-2"
+          >
+            <Download size={18} />
+            Оновити зараз
+          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={handleLater}
+              className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 rounded-xl font-medium transition-all text-sm"
+            >
+              Пізніше
+            </button>
+            <button
+              onClick={handleNever}
+              className="flex-1 py-3 bg-gray-800/50 hover:bg-gray-800 text-gray-500 border border-gray-700/50 rounded-xl font-medium transition-all text-sm"
+            >
+              Не нагадувати
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <div className="relative flex h-screen w-full bg-[#0a0c10] text-gray-100 overflow-hidden font-sans selection:bg-blue-500/30">
       <WarningModal />
+      <UpdateModal />
       {/* Background gradients */}
       <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/10 blur-[120px] rounded-full pointer-events-none" />

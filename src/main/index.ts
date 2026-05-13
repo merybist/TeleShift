@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, shell } from 'electron'
 import { join } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
@@ -31,9 +31,8 @@ function createWindow() {
     }
   })
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show()
-  })
+  // Start hidden — the app lives in the system tray
+  // Window only shows via tray menu or update notification
 
   // Prevent closing, hide instead
   mainWindow.on('close', (event) => {
@@ -97,16 +96,90 @@ ipcMain.handle('select-file', async () => {
   return result.filePaths[0]
 })
 
+ipcMain.on('show-window', () => {
+  mainWindow?.show()
+  mainWindow?.focus()
+})
+
 ipcMain.on('quit-app', () => {
   isQuitting = true
   app.exit(0)
 })
 
 // ══════════════════════════════════════════════════════════════
-// Database initialization — supports both Supabase and raw PG
+// Auto-update: checks GitHub releases for new versions
 // ══════════════════════════════════════════════════════════════
 
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion()
+})
+
+ipcMain.handle('check-for-update', async () => {
+  try {
+    const https = require('https')
+    const data: string = await new Promise((resolve, reject) => {
+      https.get('https://api.github.com/repos/merybist/TeleShift/releases/latest', {
+        headers: { 'User-Agent': 'TeleShift-Updater' }
+      }, (res: any) => {
+        let body = ''
+        res.on('data', (c: string) => body += c)
+        res.on('end', () => resolve(body))
+      }).on('error', reject)
+    })
+    const release = JSON.parse(data)
+    const latestVersion = (release.tag_name || '').replace(/^v/, '')
+    const currentVersion = app.getVersion()
+    
+    if (!latestVersion) return null
+
+    // Simple version comparison
+    const isNewer = latestVersion !== currentVersion && latestVersion > currentVersion
+    
+    if (isNewer) {
+      // Find the right asset for the current platform
+      let downloadUrl = release.html_url // fallback to release page
+      const assets = release.assets || []
+      for (const asset of assets) {
+        const name = (asset.name || '').toLowerCase()
+        if (process.platform === 'win32' && name.endsWith('.exe')) {
+          downloadUrl = asset.browser_download_url
+          break
+        }
+        if (process.platform === 'darwin' && name.endsWith('.dmg')) {
+          downloadUrl = asset.browser_download_url
+          break
+        }
+      }
+
+      return {
+        version: latestVersion,
+        currentVersion,
+        downloadUrl,
+        releaseNotes: release.body || '',
+        releaseName: release.name || `v${latestVersion}`
+      }
+    }
+    return null
+  } catch (err) {
+    console.log('[Update] Check failed:', err)
+    return null
+  }
+})
+
+ipcMain.handle('open-download-url', async (_event, url: string) => {
+  await shell.openExternal(url)
+})
+
+// ══════════════════════════════════════════════════════════════
+// Database initialization — supports both Supabase and raw PG
+// ══════════════════════════════════════════════════════════════
+let currentDeviceId: string | null = null
+let pollInterval: NodeJS.Timeout | null = null
+
 ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
+  currentDeviceId = deviceId
+  console.log('[TeleShift] init-supabase called, deviceId:', deviceId, 'pgMode:', !!databaseUrl)
+
   if (databaseUrl) {
     // ── Raw PostgreSQL mode ──
     dbMode = 'pg'
@@ -116,9 +189,10 @@ ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
     dbMode = 'supabase'
     supabase = createClient(url, key, {
       auth: { persistSession: false },
-      global: { WebSocket: WebSocket as any }
+      realtime: { transport: WebSocket as any }
     })
     
+    // Realtime subscription (primary)
     supabase
       .channel('device_commands_listener')
       .on('postgres_changes', { 
@@ -127,12 +201,73 @@ ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
           table: 'device_commands', 
           filter: `device_id=eq.${deviceId}` 
       }, async (payload: any) => {
+          console.log('[Realtime] Got command event:', payload.new?.command)
           const cmd = payload.new
           if (cmd.status === 'pending') {
              await processCommand(cmd)
           }
       })
-      .subscribe()
+      .subscribe((status: string, err: any) => {
+          console.log('[Realtime] Subscription status:', status, err || '')
+      })
+  }
+
+  // Polling fallback (runs for both Supabase and PG modes)
+  // Catches any commands that Realtime might miss
+  if (pollInterval) clearInterval(pollInterval)
+  pollInterval = setInterval(() => pollPendingCommands(deviceId), 3000)
+
+  // Mark device as online
+  setDeviceOnline(deviceId, true)
+})
+
+async function pollPendingCommands(deviceId: string) {
+  try {
+    let rows: any[] = []
+    if (dbMode === 'supabase' && supabase) {
+      const { data } = await supabase
+        .from('device_commands')
+        .select('*')
+        .eq('device_id', deviceId)
+        .eq('status', 'pending')
+      rows = data || []
+    } else if (dbMode === 'pg' && pgClient) {
+      const res = await pgClient.query(
+        'SELECT * FROM device_commands WHERE device_id = $1 AND status = $2',
+        [deviceId, 'pending']
+      )
+      rows = res.rows
+    }
+    for (const cmd of rows) {
+      console.log('[Poll] Found pending command:', cmd.command)
+      await processCommand(cmd)
+    }
+  } catch (err) {
+    // Silently ignore poll errors
+  }
+}
+
+async function setDeviceOnline(deviceId: string, online: boolean) {
+  try {
+    const data = { is_online: online, last_seen_at: new Date().toISOString() }
+    if (dbMode === 'supabase' && supabase) {
+      await supabase.from('devices').update(data).eq('id', deviceId)
+    } else if (dbMode === 'pg' && pgClient) {
+      await pgClient.query(
+        'UPDATE devices SET is_online = $1, last_seen_at = $2 WHERE id = $3',
+        [online, data.last_seen_at, deviceId]
+      )
+    }
+    console.log(`[TeleShift] Device marked ${online ? 'ONLINE' : 'OFFLINE'}`)
+  } catch (err) {
+    console.error('[TeleShift] Failed to update online status:', err)
+  }
+}
+
+// Mark device offline on quit
+app.on('before-quit', async () => {
+  if (currentDeviceId) {
+    await setDeviceOnline(currentDeviceId, false)
   }
 })
 
@@ -357,13 +492,36 @@ async function processCommand(cmd: any) {
                 else exec('rundll32.exe user32.dll,LockWorkStation')
                 break
             case 'get_status':
-                const bat = await si.battery()
-                const disk = await si.fsSize()
+                const [bat, disk, cpuLoad, mem, gpu, osInfo] = await Promise.all([
+                    si.battery(),
+                    si.fsSize(),
+                    si.currentLoad(),
+                    si.mem(),
+                    si.graphics(),
+                    si.osInfo()
+                ])
                 const cDisk = disk.find(d => d.mount === 'C:') || disk[0]
-                result = JSON.stringify({
-                    battery: bat.hasBattery ? bat.percent : 'Desktop',
-                    disk_free: cDisk ? Math.floor(cDisk.available / (1024*1024*1024)) : 0
-                })
+                const gpuInfo = gpu.controllers?.[0]
+                const statusData: any = {
+                    cpu_load: Math.round(cpuLoad.currentLoad),
+                    ram_total: Math.round(mem.total / (1024*1024*1024)),
+                    ram_used: Math.round(mem.used / (1024*1024*1024)),
+                    ram_percent: Math.round(mem.used / mem.total * 100),
+                    disk_total: cDisk ? Math.round(cDisk.size / (1024*1024*1024)) : 0,
+                    disk_used: cDisk ? Math.round(cDisk.used / (1024*1024*1024)) : 0,
+                    disk_free: cDisk ? Math.round(cDisk.available / (1024*1024*1024)) : 0,
+                    gpu_name: gpuInfo?.model || 'N/A',
+                    gpu_temp: gpuInfo?.temperatureGpu || null,
+                    gpu_usage: gpuInfo?.utilizationGpu || null,
+                    os: `${osInfo.distro} ${osInfo.release}`,
+                    hostname: osInfo.hostname,
+                    uptime_hours: Math.round(require('os').uptime() / 3600)
+                }
+                if (bat.hasBattery) {
+                    statusData.battery = bat.percent
+                    statusData.battery_charging = bat.isCharging
+                }
+                result = JSON.stringify(statusData)
                 break
             case 'get_volume':
                 const vol = await loudness.getVolume()

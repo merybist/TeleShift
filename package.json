@@ -2,12 +2,18 @@
   "name": "TeleShift",
   "author": "merybist",
   "description": "Remote PC controller desktop via Telegram.",
-  "version": "2026.5.14",
+  "version": "2026.5.14.1",
   "main": "./out/main/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/merybist/TeleShift"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "build:exe": "npm run build && electron-builder"
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:all": "npm run build && electron-builder --win --mac"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",
@@ -41,13 +47,42 @@
     "vite": "^5.2.11"
   },
   "build": {
-    "appId": "com.pccontroller.app",
+    "appId": "com.teleshift.app",
+    "productName": "TeleShift",
     "icon": "resources/icon.png",
+    "asarUnpack": [
+      "node_modules/screenshot-desktop/**",
+      "node_modules/loudness/**"
+    ],
     "win": {
       "target": [
         "nsis"
       ],
       "icon": "resources/icon.png"
-    }
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.png",
+      "category": "public.app-category.utilities"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ]
   }
 }

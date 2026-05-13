@@ -18,7 +18,11 @@ export const usePg = !!DATABASE_URL
 // Supabase client (only created in Supabase mode)
 let _supabase: SupabaseClient | null = null
 if (!usePg && SUPABASE_URL && SUPABASE_KEY) {
-  _supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+  const WebSocket = require('ws')
+  _supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    realtime: { transport: WebSocket },
+    auth: { persistSession: false }
+  })
 }
 
 // Export raw supabase client for backward compat (null in PG mode)
