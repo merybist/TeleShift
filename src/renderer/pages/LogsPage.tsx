@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { supabase } from '../supabase'
+import { dbSelect, dbSelectOne, dbDelete, dbSubscribe } from '../db'
 
 export default function LogsPage() {
   const [logs, setLogs] = useState<any[]>([])
@@ -8,25 +8,25 @@ export default function LogsPage() {
 
   useEffect(() => {
     fetchLogs()
-    const sub = supabase.channel('logs').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'logs' }, (payload) => {
-      setLogs(prev => [payload.new, ...prev].slice(0, 100))
-    }).subscribe()
-    return () => { supabase.removeChannel(sub) }
+    const sub = dbSubscribe('logs', 'logs', (payload) => {
+      setLogs(prev => [payload, ...prev].slice(0, 100))
+    }, { eventType: 'INSERT' })
+    return () => sub.unsubscribe()
   }, [])
 
   async function fetchLogs() {
     if (!deviceId) return
-    const { data: dev } = await supabase.from('devices').select('id').eq('device_id', deviceId).single()
+    const dev = await dbSelectOne('devices', 'id', { device_id: deviceId })
     if (dev) {
       setInternalId(dev.id)
-      const { data } = await supabase.from('logs').select('*').eq('device_id', dev.id).order('created_at', { ascending: false }).limit(100)
-      setLogs(data || [])
+      const data = await dbSelect('logs', '*', { device_id: dev.id }, { orderBy: 'created_at', ascending: false, limit: 100 })
+      setLogs(data)
     }
   }
 
   async function clearLogs() {
     if (!internalId) return
-    await supabase.from('logs').delete().eq('device_id', internalId)
+    await dbDelete('logs', { device_id: internalId })
     setLogs([])
   }
 

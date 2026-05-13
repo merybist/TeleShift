@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { supabase } from '../supabase'
+import { dbSelect, dbSelectOne, dbInsert, dbDelete, dbSubscribe } from '../db'
 import { motion } from 'framer-motion'
 import { FolderPlus, Trash2, Box } from 'lucide-react'
 const { ipcRenderer } = require('electron')
@@ -11,17 +11,17 @@ export default function AppsPage() {
 
   useEffect(() => {
     fetchDeviceAndApps()
-    const sub = supabase.channel('apps').on('postgres_changes', { event: '*', schema: 'public', table: 'apps' }, fetchDeviceAndApps).subscribe()
-    return () => { supabase.removeChannel(sub) }
+    const sub = dbSubscribe('apps', 'apps', () => fetchDeviceAndApps())
+    return () => sub.unsubscribe()
   }, [])
 
   async function fetchDeviceAndApps() {
     if (!deviceId) return
-    const { data: dev } = await supabase.from('devices').select('id').eq('device_id', deviceId).single()
+    const dev = await dbSelectOne('devices', 'id', { device_id: deviceId })
     if (dev) {
       setInternalId(dev.id)
-      const { data } = await supabase.from('apps').select('*').eq('device_id', dev.id)
-      setApps(data || [])
+      const data = await dbSelect('apps', '*', { device_id: dev.id })
+      setApps(data)
     }
   }
 
@@ -29,12 +29,14 @@ export default function AppsPage() {
     const path = await ipcRenderer.invoke('select-file')
     if (path) {
       const name = path.split('\\').pop()?.replace('.exe', '') || 'Нова програма'
-      await supabase.from('apps').insert([{ device_id: internalId, name, path }])
+      await dbInsert('apps', { device_id: internalId, name, path })
+      fetchDeviceAndApps()
     }
   }
 
   async function removeApp(id: string) {
-    await supabase.from('apps').delete().eq('id', id)
+    await dbDelete('apps', { id })
+    fetchDeviceAndApps()
   }
 
   return (

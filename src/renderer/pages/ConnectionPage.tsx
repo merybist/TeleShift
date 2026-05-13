@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { nanoid } from 'nanoid'
 import { QRCodeSVG } from 'qrcode.react'
-import { supabase } from '../supabase'
+import { dbSelect, dbSelectOne, dbInsert, dbUpdate, dbDelete, dbSubscribe, usePg } from '../db'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, RefreshCw } from 'lucide-react'
 const { ipcRenderer } = require('electron')
@@ -20,26 +20,25 @@ export default function ConnectionPage() {
   }, [])
 
   useEffect(() => {
-    if (!deviceId) return
+    if (!internalId) return
     ipcRenderer.send('init-supabase', {
       url: import.meta.env.VITE_SUPABASE_URL,
       key: import.meta.env.VITE_SUPABASE_ANON_KEY,
-      deviceId: deviceId
+      deviceId: internalId,
+      databaseUrl: import.meta.env.VITE_DATABASE_URL || ''
     })
-  }, [deviceId])
+  }, [internalId])
 
   useEffect(() => {
     if (!internalId) return
     fetchConnection()
-    const sub = supabase
-      .channel('connections_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'connections', filter: `device_id=eq.${internalId}` }, (payload) => {
-        setConnection(payload.new)
-      })
-      .subscribe()
-    return () => {
-      supabase.removeChannel(sub)
-    }
+    const sub = dbSubscribe(
+      'connections_changes',
+      'connections',
+      (payload) => setConnection(payload),
+      { filter: `device_id=eq.${internalId}` }
+    )
+    return () => sub.unsubscribe()
   }, [internalId])
 
   useEffect(() => {
@@ -66,15 +65,15 @@ export default function ConnectionPage() {
     }
     setDeviceId(currentId)
 
-    let { data: dev } = await supabase.from('devices').select('id').eq('device_id', currentId).single()
+    let dev = await dbSelectOne('devices', 'id', { device_id: currentId })
     if (!dev) {
-      const { data: newDev } = await supabase.from('devices').insert([{
+      const newDev = await dbInsert('devices', {
         device_id: currentId,
         name: require('os').hostname()
-      }]).select().single()
+      })
       dev = newDev
       if (dev) {
-        await supabase.from('settings').insert([{ device_id: dev.id }])
+        await dbInsert('settings', { device_id: dev.id })
       }
     }
     if (dev) {
@@ -84,7 +83,8 @@ export default function ConnectionPage() {
 
   async function fetchConnection() {
     if (!internalId) return
-    const { data } = await supabase.from('connections').select('*').eq('device_id', internalId).single()
+    const rows = await dbSelect('connections', '*', { device_id: internalId })
+    const data = rows[0] || null
     if (data) {
       setConnection(data)
       setHash(data.hash_token)
@@ -97,12 +97,12 @@ export default function ConnectionPage() {
   async function generateNewHash() {
     if (!internalId) return
     const newHash = nanoid(12)
-    await supabase.from('connections').delete().eq('device_id', internalId)
-    await supabase.from('device_commands').delete().eq('device_id', internalId) // Clear old logs when session resets
-    await supabase.from('connections').insert([{
+    await dbDelete('connections', { device_id: internalId })
+    await dbDelete('device_commands', { device_id: internalId })
+    await dbInsert('connections', {
       device_id: internalId,
       hash_token: newHash
-    }])
+    })
     setHash(newHash)
     setConnection(null)
     setTimeLeft(120)
@@ -110,7 +110,7 @@ export default function ConnectionPage() {
 
   async function resetConnection() {
     if (!connection) return
-    await supabase.from('connections').update({ is_active: false }).eq('id', connection.id)
+    await dbUpdate('connections', { is_active: false }, { id: connection.id })
     generateNewHash()
   }
 

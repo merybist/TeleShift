@@ -9,15 +9,22 @@ import screenshot from 'screenshot-desktop'
 
 let mainWindow: BrowserWindow | null = null
 let supabase: any = null
+let pgClient: any = null
 let tray: Tray | null = null
 let isQuitting = false
+let dbMode: 'supabase' | 'pg' = 'supabase'
 
 
 function createWindow() {
+  // Remove default menu bar (File, Edit, View...)
+  Menu.setApplicationMenu(null)
+
   mainWindow = new BrowserWindow({
     width: 900,
     height: 600,
-    show: false, // Show gracefully
+    show: false,
+    autoHideMenuBar: true,
+    icon: join(__dirname, '../../resources/icon.png'),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -44,8 +51,8 @@ function createWindow() {
 }
 
 function createTray() {
-  // Empty icon if no asset provided. In production, provide an icon.png
-  const icon = nativeImage.createEmpty()
+  const iconPath = join(__dirname, '../../resources/icon.png')
+  const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
   tray = new Tray(icon)
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Відкрити налаштування', click: () => mainWindow?.show() },
@@ -56,7 +63,7 @@ function createTray() {
       }
     }
   ])
-  tray.setToolTip('PC Controller Host')
+  tray.setToolTip('TeleShift')
   tray.setContextMenu(contextMenu)
   tray.on('double-click', () => mainWindow?.show())
 }
@@ -95,32 +102,245 @@ ipcMain.on('quit-app', () => {
   app.exit(0)
 })
 
-ipcMain.on('init-supabase', (event, { url, key, deviceId }) => {
-  supabase = createClient(url, key, {
-    auth: { persistSession: false },
-    global: { WebSocket: WebSocket as any }
-  })
-  
-  supabase
-    .channel('device_commands_listener')
-    .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'device_commands', 
-        filter: `device_id=eq.${deviceId}` 
-    }, async (payload: any) => {
-        const cmd = payload.new
-        if (cmd.status === 'pending') {
-           await processCommand(cmd)
-        }
+// ══════════════════════════════════════════════════════════════
+// Database initialization — supports both Supabase and raw PG
+// ══════════════════════════════════════════════════════════════
+
+ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
+  if (databaseUrl) {
+    // ── Raw PostgreSQL mode ──
+    dbMode = 'pg'
+    initPostgres(databaseUrl, deviceId)
+  } else {
+    // ── Supabase mode ──
+    dbMode = 'supabase'
+    supabase = createClient(url, key, {
+      auth: { persistSession: false },
+      global: { WebSocket: WebSocket as any }
     })
-    .subscribe()
+    
+    supabase
+      .channel('device_commands_listener')
+      .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'device_commands', 
+          filter: `device_id=eq.${deviceId}` 
+      }, async (payload: any) => {
+          const cmd = payload.new
+          if (cmd.status === 'pending') {
+             await processCommand(cmd)
+          }
+      })
+      .subscribe()
+  }
 })
 
+async function initPostgres(connectionString: string, deviceId: string) {
+  try {
+    const pg = require('pg')
+    pgClient = new pg.Client({ connectionString })
+    await pgClient.connect()
+    console.log('[PG] Connected to PostgreSQL')
+
+    await pgClient.query('LISTEN new_command')
+    console.log('[PG] Listening for new_command notifications')
+
+    pgClient.on('notification', async (msg: any) => {
+      try {
+        const cmd = JSON.parse(msg.payload)
+        if (cmd.device_id === deviceId && cmd.status === 'pending') {
+          // Re-fetch full command data
+          const res = await pgClient.query('SELECT * FROM device_commands WHERE id = $1', [cmd.id])
+          if (res.rows.length > 0) {
+            await processCommand(res.rows[0])
+          }
+        }
+      } catch (err) {
+        console.error('[PG] Error processing notification:', err)
+      }
+    })
+  } catch (err) {
+    console.error('[PG] Connection error:', err)
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// IPC CRUD handlers for renderer (used in PostgreSQL mode)
+// ══════════════════════════════════════════════════════════════
+
+ipcMain.handle('db-select', async (_event, { table, columns, filters, orderBy, ascending, limit }) => {
+  if (dbMode === 'pg' && pgClient) {
+    let query = `SELECT ${columns || '*'} FROM ${table}`
+    const params: any[] = []
+    let idx = 1
+    if (filters && Object.keys(filters).length) {
+      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+      query += ' WHERE ' + conds.join(' AND ')
+    }
+    if (orderBy) query += ` ORDER BY ${orderBy} ${ascending === false ? 'DESC' : 'ASC'}`
+    if (limit) query += ` LIMIT ${limit}`
+    const res = await pgClient.query(query, params)
+    return res.rows
+  } else if (supabase) {
+    let q = supabase.from(table).select(columns || '*')
+    for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+    if (orderBy) q = q.order(orderBy, { ascending: ascending !== false })
+    if (limit) q = q.limit(limit)
+    const { data } = await q
+    return data || []
+  }
+  return []
+})
+
+ipcMain.handle('db-select-one', async (_event, { table, columns, filters }) => {
+  if (dbMode === 'pg' && pgClient) {
+    let query = `SELECT ${columns || '*'} FROM ${table}`
+    const params: any[] = []
+    let idx = 1
+    if (filters && Object.keys(filters).length) {
+      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+      query += ' WHERE ' + conds.join(' AND ')
+    }
+    query += ' LIMIT 1'
+    const res = await pgClient.query(query, params)
+    return res.rows[0] || null
+  } else if (supabase) {
+    let q = supabase.from(table).select(columns || '*')
+    for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+    const { data } = await q.single()
+    return data
+  }
+  return null
+})
+
+ipcMain.handle('db-insert', async (_event, { table, data }) => {
+  if (dbMode === 'pg' && pgClient) {
+    const cols = Object.keys(data).join(', ')
+    const placeholders = Object.keys(data).map((_, i) => `$${i + 1}`).join(', ')
+    const res = await pgClient.query(`INSERT INTO ${table} (${cols}) VALUES (${placeholders}) RETURNING *`, Object.values(data))
+    return res.rows[0] || null
+  } else if (supabase) {
+    const { data: result } = await supabase.from(table).insert([data]).select().single()
+    return result
+  }
+  return null
+})
+
+ipcMain.handle('db-update', async (_event, { table, data, filters }) => {
+  if (dbMode === 'pg' && pgClient) {
+    const params: any[] = []
+    let idx = 1
+    const setParts = Object.entries(data).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+    let query = `UPDATE ${table} SET ${setParts.join(', ')}`
+    if (filters && Object.keys(filters).length) {
+      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+      query += ' WHERE ' + conds.join(' AND ')
+    }
+    await pgClient.query(query, params)
+  } else if (supabase) {
+    let q = supabase.from(table).update(data)
+    for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+    await q
+  }
+})
+
+ipcMain.handle('db-delete', async (_event, { table, filters }) => {
+  if (dbMode === 'pg' && pgClient) {
+    const params: any[] = []
+    let idx = 1
+    let query = `DELETE FROM ${table}`
+    if (filters && Object.keys(filters).length) {
+      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+      query += ' WHERE ' + conds.join(' AND ')
+    }
+    await pgClient.query(query, params)
+  } else if (supabase) {
+    let q = supabase.from(table).delete()
+    for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+    await q
+  }
+})
+
+// ══════════════════════════════════════════════════════════════
+// IPC Realtime subscribe (for PG mode, uses LISTEN/NOTIFY)
+// ══════════════════════════════════════════════════════════════
+
+const pgListeners = new Map<string, any>()
+
+ipcMain.handle('db-subscribe', async (_event, { channel, table, eventType, filter }) => {
+  const subId = `${channel}_${Date.now()}`
+
+  if (dbMode === 'pg' && pgClient) {
+    // PG mode — listener is already active from init, 
+    // we just need to forward matching notifications to renderer
+    const listener = (msg: any) => {
+      try {
+        const payload = JSON.parse(msg.payload)
+        mainWindow?.webContents.send('db-notification', { subId, payload })
+      } catch {}
+    }
+    // Map the NOTIFY channel name from our trigger naming convention
+    let pgChannel = 'new_command'
+    if (table === 'connections') pgChannel = 'connection_change'
+    if (table === 'apps') pgChannel = 'apps_change'
+    if (table === 'logs') pgChannel = 'log_insert'
+
+    await pgClient.query(`LISTEN ${pgChannel}`)
+    pgClient.on('notification', listener)
+    pgListeners.set(subId, { listener, pgChannel })
+  } else if (supabase) {
+    const sub = supabase
+      .channel(channel)
+      .on('postgres_changes', { event: eventType || '*', schema: 'public', table, filter }, (payload: any) => {
+        mainWindow?.webContents.send('db-notification', { subId, payload: payload.new })
+      })
+      .subscribe()
+    pgListeners.set(subId, { sub })
+  }
+
+  return subId
+})
+
+ipcMain.handle('db-unsubscribe', async (_event, { subId }) => {
+  const entry = pgListeners.get(subId)
+  if (!entry) return
+
+  if (dbMode === 'pg' && entry.listener) {
+    pgClient?.removeListener('notification', entry.listener)
+  } else if (entry.sub && supabase) {
+    supabase.removeChannel(entry.sub)
+  }
+
+  pgListeners.delete(subId)
+})
+
+
+// ══════════════════════════════════════════════════════════════
+// Command processing (shared between Supabase and PG modes)
+// ══════════════════════════════════════════════════════════════
+
+async function dbUpdate(table: string, data: any, filters: any) {
+  if (dbMode === 'pg' && pgClient) {
+    const params: any[] = []
+    let idx = 1
+    const setParts = Object.entries(data).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+    let query = `UPDATE ${table} SET ${setParts.join(', ')}`
+    if (filters) {
+      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+      query += ' WHERE ' + conds.join(' AND ')
+    }
+    await pgClient.query(query, params)
+  } else if (supabase) {
+    let q = supabase.from(table).update(data)
+    for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+    await q
+  }
+}
+
 async function processCommand(cmd: any) {
-    if (!supabase) return
     try {
-        await supabase.from('device_commands').update({ status: 'processing' }).eq('id', cmd.id)
+        await dbUpdate('device_commands', { status: 'processing' }, { id: cmd.id })
         let result: any = 'success'
 
         switch(cmd.command) {
@@ -165,11 +385,17 @@ async function processCommand(cmd: any) {
                 break
             case 'take_screenshot':
                 const imgBuffer = await screenshot()
-                const fileName = `screenshot_${Date.now()}.png`
-                const { data, error } = await supabase.storage.from('screenshots').upload(fileName, imgBuffer, { contentType: 'image/png' })
-                if (error) throw error
-                const { data: pubData } = supabase.storage.from('screenshots').getPublicUrl(fileName)
-                result = pubData.publicUrl
+                if (dbMode === 'supabase' && supabase) {
+                    // Upload to Supabase Storage and return public URL
+                    const fileName = `screenshot_${Date.now()}.png`
+                    const { data, error } = await supabase.storage.from('screenshots').upload(fileName, imgBuffer, { contentType: 'image/png' })
+                    if (error) throw error
+                    const { data: pubData } = supabase.storage.from('screenshots').getPublicUrl(fileName)
+                    result = pubData.publicUrl
+                } else {
+                    // Raw PG mode — encode screenshot as base64
+                    result = (imgBuffer as Buffer).toString('base64')
+                }
                 break
             case 'launch_app':
                 if (process.platform === 'darwin') exec(`open "${cmd.payload.path}"`)
@@ -179,8 +405,8 @@ async function processCommand(cmd: any) {
                 throw new Error('Unknown command')
         }
 
-        await supabase.from('device_commands').update({ status: 'completed', result }).eq('id', cmd.id)
+        await dbUpdate('device_commands', { status: 'completed', result }, { id: cmd.id })
     } catch (err: any) {
-        await supabase.from('device_commands').update({ status: 'error', result: err.message }).eq('id', cmd.id)
+        await dbUpdate('device_commands', { status: 'error', result: err.message }, { id: cmd.id })
     }
 }
