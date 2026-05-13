@@ -13,9 +13,9 @@ async def menu_status(call: CallbackQuery):
 @router.callback_query(F.data == "stat_all")
 async def stat_all(call: CallbackQuery, device_id: str):
     await call.message.edit_text("⏳ Отримую статус з ПК...")
-    cmd_id = push_command(device_id, "get_status")
+    cmd_id = await push_command(device_id, "get_status")
     result = await wait_for_result(cmd_id)
-    
+
     if result == "timeout":
         await call.message.edit_text("❌ ПК не відповідає. Перевірте підключення додатка.", reply_markup=back_kb())
     else:
@@ -29,9 +29,9 @@ async def stat_all(call: CallbackQuery, device_id: str):
 @router.callback_query(F.data == "stat_sound")
 async def stat_sound(call: CallbackQuery, device_id: str):
     await call.message.edit_text("⏳ Отримую статус звуку...")
-    cmd_id = push_command(device_id, "get_volume")
+    cmd_id = await push_command(device_id, "get_volume")
     result = await wait_for_result(cmd_id)
-    
+
     if result == "timeout" or result.startswith("Помилка"):
         await call.message.edit_text("❌ Помилка отримання звуку", reply_markup=back_kb())
     else:
@@ -46,11 +46,11 @@ async def stat_sound(call: CallbackQuery, device_id: str):
 @router.callback_query(F.data.startswith("snd_"))
 async def ctrl_sound(call: CallbackQuery, device_id: str):
     action = call.data.split("_")[1]
-    
-    cmd_id = push_command(device_id, "set_volume", {"action": action})
+
+    cmd_id = await push_command(device_id, "set_volume", {"action": action})
     await call.message.edit_text("⏳ Змінюю...")
     result = await wait_for_result(cmd_id)
-    
+
     if result == "timeout" or result.startswith("Помилка"):
         await call.message.edit_text("❌ Помилка", reply_markup=back_kb())
     else:

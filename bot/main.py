@@ -2,12 +2,15 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from config import BOT_TOKEN
+from db import db
 from middleware.auth import AuthMiddleware
 from handlers import connect, menu, power, status, screenshot, launcher, settings
 
 logging.basicConfig(level=logging.INFO)
 
 async def main():
+    await db.init()
+
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
 

@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from supabase_client import sb
+from db import db
 from keyboards.inline import connect_info_kb, main_menu_kb
 from states.forms import ConnectForm
 from utils.device import log_action
@@ -37,24 +37,24 @@ async def receive_hash(message: Message, state: FSMContext):
 
 async def process_hash(message: Message, hash_token: str):
     # Шукаємо підключення по хешу
-    resp = sb.table("connections").select("*").eq("hash_token", hash_token).execute()
-    
-    if not resp.data:
+    rows = await db.select("connections", "*", {"hash_token": hash_token})
+
+    if not rows:
         await message.answer("❌ Невірний токен або токен вже недійсний.")
         return
-        
-    conn = resp.data[0]
-    
+
+    conn = rows[0]
+
     if conn["is_active"] and conn["user_id"] != message.from_user.id:
         await message.answer("❌ Цей токен вже використовується іншим користувачем. Згенеруйте новий в додатку.")
         return
 
-    sb.table("connections").update({
+    await db.update("connections", {
         "is_active": True,
         "user_id": message.from_user.id,
         "username": message.from_user.username,
         "first_name": message.from_user.first_name
-    }).eq("id", conn["id"]).execute()
-    
-    log_action(conn["device_id"], message.from_user.id, message.from_user.username, "Підключив пристрій")
+    }, {"id": conn["id"]})
+
+    await log_action(conn["device_id"], message.from_user.id, message.from_user.username, "Підключив пристрій")
     await message.answer("✅ ПК успішно підключено!\nГоловне меню:", reply_markup=main_menu_kb())

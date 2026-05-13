@@ -15,12 +15,13 @@
 
 **TeleShift** is a high-end, secure, and distributed remote PC control system. It empowers you to manage your desktop computers remotely using a centralized Telegram Bot acting as the command center, and a lightweight, background Electron-based agent installed on your machines.
 
-With real-time commands bridged through **Supabase**, TeleShift offers instant execution with high security and minimal latency.
+With real-time commands bridged through **Supabase** or your own **PostgreSQL** database, TeleShift offers instant execution with high security and minimal latency. Just spin up a database — and go.
 
 ## ✨ Features
 
 - 📱 **Telegram Bot Interface:** Control your PC from anywhere right from your Telegram app.
-- ⚡ **Real-Time Execution:** Powered by Supabase WebSockets for instant command delivery.
+- ⚡ **Real-Time Execution:** Powered by Supabase Realtime or PostgreSQL `LISTEN/NOTIFY` for instant command delivery.
+- 🐘 **Flexible Backend:** Use managed Supabase or your own self-hosted PostgreSQL — your choice.
 - 🖥️ **Agent:** Built with Electron & React for Windows.
 - 🔒 **Secure Connection:** Devices are linked securely via per-user unique database hashes.
 - 👻 **Stealth Mode:** The desktop agent starts automatically on boot and runs hidden in the system tray.
@@ -55,14 +56,25 @@ With real-time commands bridged through **Supabase**, TeleShift offers instant e
 
 ## 🚀 Getting Started
 
-### 1. Database Setup (Supabase / PostgreSQL)
-1. Create a new Supabase project or use your own PostgreSQL database with Realtime enabled.
-2. Setup the `device_commands` table for realtime listening.
-3. Keep your Database URL (or `SUPABASE_URL`) and Keys handy.
+### 1. Database Setup
+
+You have two options:
+
+#### Option A: Supabase (managed, zero-config)
+1. Create a new [Supabase](https://supabase.com) project.
+2. Run `supabase/schema.sql` in the SQL editor to create tables.
+3. Note your `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+
+#### Option B: Raw PostgreSQL (self-hosted)
+1. Set up a PostgreSQL 14+ database.
+2. Run `supabase/schema.sql` to create tables + `LISTEN/NOTIFY` triggers.
+3. Note your `DATABASE_URL` (e.g. `postgresql://user:pass@host:5432/dbname`).
+
+> When `DATABASE_URL` is set, it takes priority over Supabase credentials.
 
 ### 2. Telegram Bot Setup
 1. Clone the repository and navigate to the `bot` directory.
-2. Copy `.env.example` to `.env` and fill in your Supabase and Telegram Bot tokens.
+2. Copy `.env.example` to `.env` and fill in your credentials:
 3. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
@@ -90,7 +102,7 @@ With real-time commands bridged through **Supabase**, TeleShift offers instant e
 ---
 
 ## 🛡️ Security & Privacy
-TeleShift does not expose your local PC to the public internet via port forwarding. It securely listens for authorized commands pushed to the Supabase real-time channel, preventing external attacks.
+TeleShift does not expose your local PC to the public internet via port forwarding. It securely listens for authorized commands pushed to the database real-time channel (Supabase WebSocket or PostgreSQL `NOTIFY`), preventing external attacks.
 
 ---
 
