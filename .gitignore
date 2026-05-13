@@ -1,0 +1,39 @@
+# Змінні середовища (ТУТ КЛЮЧІ, ЇХ НЕ МОЖНА ПУБЛІКУВАТИ)
+.env
+.env.*
+!.env.example
+bot/.env
+electron-app/.env
+
+# Node / Electron
+node_modules/
+electron-app/node_modules/
+electron-app/dist/
+electron-app/out/
+electron-app/release/
+npm-debug.log
+yarn-error.log
+
+# Python / Bot
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+bot/venv/
+bot/env/
+bot/__pycache__/
+bot/build/
+bot/dist/
+*.spec
+
+# Скріншоти та тимчасові файли
+*.png
+*.jpg
+*.jpeg
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
