@@ -2,6 +2,8 @@ CREATE TABLE devices (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id uuid UNIQUE NOT NULL,
     name text,
+    is_online boolean DEFAULT false,
+    last_seen_at timestamptz,
     created_at timestamptz DEFAULT now()
 );
 
@@ -29,6 +31,7 @@ CREATE TABLE settings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id uuid REFERENCES devices(id) ON DELETE CASCADE UNIQUE,
     notify_on_command boolean DEFAULT true,
+    notify_online boolean DEFAULT true,
     auto_disconnect_enabled boolean DEFAULT false,
     auto_disconnect_hours int DEFAULT 24,
     disconnect_on_close boolean DEFAULT false,

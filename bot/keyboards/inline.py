@@ -77,11 +77,13 @@ def apps_kb(apps):
 
 def settings_kb(settings):
     notif = "Увімк" if settings.get('notify_on_command') else "Вимк"
+    online_notif = "Увімк" if settings.get('notify_online', True) else "Вимк"
     qual = settings.get('screenshot_quality', 'high')
     lang = settings.get('language', 'ua').upper()
 
     kb = [
         [InlineKeyboardButton(text=f"🔔 Сповіщення: {notif}", callback_data="set_notif")],
+        [InlineKeyboardButton(text=f"🟢 Онлайн-нотифікація: {online_notif}", callback_data="set_online_notif")],
         [InlineKeyboardButton(text=f"📸 Якість: {qual}", callback_data="set_qual"),
          InlineKeyboardButton(text=f"🌐 Мова: {lang}", callback_data="set_lang")],
         [InlineKeyboardButton(text="🔌 Відключити ПК", callback_data="disconnect_pc")],
