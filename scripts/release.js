@@ -110,7 +110,7 @@ async function run() {
             
             console.log('Pushing code changes (non-fatal)...');
             try {
-                execSync(`git add . && git commit -m "chore: release v${newVersion}"`, { stdio: 'ignore' });
+                execSync(`git add . && git commit -m "chore: release ${newVersion}"`, { stdio: 'ignore' });
             } catch(e) {}
 
             try {
@@ -119,7 +119,7 @@ async function run() {
                 console.warn('⚠️ Git push failed, but continuing to GitHub Release...');
             }
 
-            execSync(`gh release create v${newVersion} ${exeFile} --title "TeleShift Release v${newVersion}" --notes-file release_notes.md`, { stdio: 'inherit' });
+            execSync(`gh release create ${newVersion} ${exeFile} --title "v${newVersion}" --notes-file release_notes.md`, { stdio: 'inherit' });
             
             console.log('\n✨ SUCCESS! Update is live and users will be notified.');
         } catch (e) {

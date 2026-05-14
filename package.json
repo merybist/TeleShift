@@ -2,7 +2,7 @@
   "name": "TeleShift",
   "author": "merybist",
   "description": "Remote PC controller desktop via Telegram.",
-  "version": "2026.5.14.7",
+  "version": "2026.5.15.1",
   "main": "./out/main/index.js",
   "repository": {
     "type": "git",

@@ -15,15 +15,16 @@ async function run() {
     const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
     const version = pkg.version;
 
-    console.log(`Current version: ${version}`);
+    // Ensure version uses dots only (YYYY.MM.DD.Attempt)
+    let targetVersion = version.replace(/-/g, '.');
 
-    const publishAnswer = await new Promise(resolve => rl.question(`\n📦 Push version v${version} to GitHub Releases? (y/n): `, resolve));
+    const publishAnswer = await new Promise(resolve => rl.question(`\n📦 Push version ${targetVersion} to GitHub Releases? (y/n): `, resolve));
     
     if (publishAnswer.toLowerCase() === 'y') {
         console.log('📤 Publishing to GitHub...');
         
         const releaseNotes = `
-## TeleShift Stable Release v${version}
+## TeleShift Stable Release v${targetVersion}
 
 ### 🔄 What's New:
 *   **Real-time App Status:** Now with ✅ indicators for running apps in the launcher.
@@ -39,12 +40,12 @@ async function run() {
             const artifacts = distFiles.filter(f => 
                 f.endsWith('.exe') && 
                 !f.includes('blockmap') &&
-                (f.includes(version) || f.includes(version.replace(/\./g, '-')))
+                (f.includes(targetVersion) || f.includes(targetVersion.replace(/\./g, '-')))
             );
 
-            // Fallback for 4-part versions
+            // Fallback
             if (artifacts.length === 0) {
-                const versionParts = version.split('.');
+                const versionParts = targetVersion.split('.');
                 const majorMinor = versionParts.slice(0, 2).join('.');
                 const match = distFiles.find(f => f.endsWith('.exe') && f.includes(majorMinor) && !f.includes('blockmap'));
                 if (match) artifacts.push(match);
@@ -63,7 +64,7 @@ async function run() {
             
             console.log('Pushing code changes (non-fatal)...');
             try {
-                execSync(`git add . && git commit -m "chore: release v${version}"`, { stdio: 'ignore' });
+                execSync(`git add . && git commit -m "chore: release ${targetVersion}"`, { stdio: 'ignore' });
             } catch(e) {}
             
             try {
@@ -72,7 +73,7 @@ async function run() {
                 console.warn('⚠️ Git push failed, but continuing to GitHub Release...');
             }
 
-            execSync(`gh release create v${version} ${exeFile} --title "TeleShift Release v${version}" --notes-file release_notes.md`, { stdio: 'inherit' });
+            execSync(`gh release create ${targetVersion} ${exeFile} --title "v${targetVersion}" --notes-file release_notes.md`, { stdio: 'inherit' });
             
             console.log('\n✨ SUCCESS! Version pushed to GitHub.');
         } catch (e) {

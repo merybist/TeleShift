@@ -91,11 +91,15 @@ app.on('window-all-closed', () => {
 ipcMain.handle('select-file', async () => {
   const isMac = process.platform === 'darwin'
   const result = await dialog.showOpenDialog({
-    properties: ['openFile', isMac ? 'treatPackageAsDirectory' : 'openFile'].filter((v, i, a) => a.indexOf(v) === i) as any,
-    filters: isMac 
-      ? [{ name: 'Applications', extensions: ['app', '*'] }] 
-      : [{ name: 'Executables', extensions: ['exe'] }]
+    properties: isMac ? ['openFile', 'openDirectory'] : ['openFile'],
+    filters: [
+      { name: 'Applications/Executables', extensions: isMac ? ['app', 'exe', 'sh', 'command'] : ['exe', 'lnk', 'bat', 'cmd'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    title: isMac ? 'Оберіть програму або файл' : 'Выберите программу або файл'
   })
+  
+  if (result.canceled || result.filePaths.length === 0) return null
   return result.filePaths[0]
 })
 
