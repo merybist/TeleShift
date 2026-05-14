@@ -5,8 +5,3 @@
 *   **Settings Fix:** All buttons in the Telegram bot are now fully functional.
 *   **macOS Stability:** Native shutdown/reboot/lock commands for Mac users.
 *   **Performance:** Improved uptime precision and telemetry reporting.
-
-### 🛠 Technical:
-*   Updated system-information engine.
-*   Enhanced IPC communication security.
-*   New HTML-based message parsing in Telegram bot.

@@ -14,7 +14,8 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:all": "npm run build && electron-builder --win --mac",
-    "deploy": "node scripts/release.js"
+    "deploy": "node scripts/release.js",
+    "publish-only": "node scripts/publish.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",
