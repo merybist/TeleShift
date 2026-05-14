@@ -165,9 +165,27 @@ function WarningModal() {
 function UpdateModal() {
   const [update, setUpdate] = useState<any>(null)
   const [show, setShow] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [status, setStatus] = useState<'pending' | 'downloading' | 'ready'>('pending')
 
   useEffect(() => {
     checkForUpdate()
+
+    const progressListener = (_: any, p: number) => {
+      setProgress(Math.round(p))
+      setStatus('downloading')
+    }
+    const readyListener = () => {
+      setStatus('ready')
+    }
+
+    ipcRenderer.on('update-progress', progressListener)
+    ipcRenderer.on('update-ready', readyListener)
+
+    return () => {
+      ipcRenderer.removeListener('update-progress', progressListener)
+      ipcRenderer.removeListener('update-ready', readyListener)
+    }
   }, [])
 
   async function checkForUpdate() {
@@ -175,28 +193,27 @@ function UpdateModal() {
       const result = await ipcRenderer.invoke('check-for-update')
       if (!result) return
 
-      // Check "don't remind" preference
       const dismissed = localStorage.getItem('update_dismissed_version')
       if (dismissed === result.version) return
 
       setUpdate(result)
       setShow(true)
-      // Show the hidden window so user can see the update modal
       ipcRenderer.send('show-window')
     } catch {}
   }
 
   if (!show || !update) return null
 
-  const handleUpdate = () => {
-    ipcRenderer.invoke('open-download-url', update.downloadUrl)
-    setShow(false)
+  const handleStartDownload = () => {
+    ipcRenderer.send('start-download')
+    setStatus('downloading')
   }
 
-  const handleLater = () => {
-    setShow(false)
+  const handleInstall = () => {
+    ipcRenderer.send('install-update')
   }
 
+  const handleLater = () => setShow(false)
   const handleNever = () => {
     localStorage.setItem('update_dismissed_version', update.version)
     setShow(false)
@@ -207,68 +224,90 @@ function UpdateModal() {
       <motion.div
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="max-w-md w-full bg-gray-900 border border-gray-700 p-8 rounded-3xl shadow-2xl relative overflow-hidden"
+        className="max-w-md w-full bg-[#0d1117] border border-gray-800 p-8 rounded-3xl shadow-2xl relative overflow-hidden"
       >
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-emerald-400" />
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-400" />
         
-        <button onClick={handleLater} className="absolute top-4 right-4 p-2 text-gray-500 hover:text-white transition-colors">
-          <X size={20} />
-        </button>
+        {status === 'pending' && (
+          <button onClick={handleLater} className="absolute top-4 right-4 p-2 text-gray-500 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        )}
 
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-12 h-12 bg-green-500/20 rounded-2xl flex items-center justify-center shrink-0 border border-green-500/30">
-            <Bell size={24} className="text-green-400" />
+          <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center shrink-0 border border-blue-500/30">
+            <Bell size={24} className="text-blue-400" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-white">Доступне оновлення!</h2>
-            <p className="text-gray-400 text-sm">{update.releaseName}</p>
+            <h2 className="text-xl font-bold text-white">
+              {status === 'ready' ? 'Update Ready!' : 'New Update Available!'}
+            </h2>
+            <p className="text-gray-400 text-sm">v{update.version}</p>
           </div>
         </div>
 
-        <div className="bg-gray-800/60 rounded-2xl p-4 mb-6 border border-gray-700/50">
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-gray-400 text-sm">Поточна версія</span>
-            <code className="text-red-400 font-mono text-sm bg-red-500/10 px-2 py-1 rounded">{update.currentVersion}</code>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-gray-400 text-sm">Нова версія</span>
-            <code className="text-green-400 font-mono text-sm bg-green-500/10 px-2 py-1 rounded">{update.version}</code>
-          </div>
-        </div>
+        {status === 'pending' && (
+          <>
+            <div className="bg-gray-800/60 rounded-2xl p-4 mb-6 border border-gray-700/50 text-sm text-gray-300">
+              A new version of TeleShift is available. Would you like to update now?
+            </div>
 
-        {update.releaseNotes && (
-          <div className="text-gray-400 text-sm mb-6 max-h-24 overflow-y-auto bg-gray-800/30 rounded-xl p-3 border border-gray-700/30">
-            {update.releaseNotes.slice(0, 200)}
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleStartDownload}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+              >
+                <Download size={18} /> Update Now
+              </button>
+              <div className="flex gap-3">
+                <button onClick={handleLater} className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl transition-all">
+                  Later
+                </button>
+                <button onClick={handleNever} className="flex-1 py-3 bg-gray-800/50 hover:bg-gray-700/50 text-gray-500 rounded-xl transition-all text-xs">
+                  Don't remind me
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {status === 'downloading' && (
+          <div className="py-4">
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-gray-400">Downloading...</span>
+              <span className="text-blue-400 font-bold">{progress}%</span>
+            </div>
+            <div className="h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
+              <motion.div 
+                className="h-full bg-gradient-to-r from-blue-500 to-indigo-400"
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-gray-500 mt-4 text-center">
+              Please don't close the app until download is complete
+            </p>
           </div>
         )}
 
-        <div className="flex flex-col gap-3">
-          <button
-            onClick={handleUpdate}
-            className="w-full py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-green-500/20 flex items-center justify-center gap-2"
-          >
-            <Download size={18} />
-            Оновити зараз
-          </button>
-          <div className="flex gap-3">
+        {status === 'ready' && (
+          <div className="flex flex-col gap-4">
+            <div className="bg-green-500/10 border border-green-500/20 p-4 rounded-2xl text-green-400 text-sm text-center">
+              Update downloaded successfully. Restart the app to apply changes.
+            </div>
             <button
-              onClick={handleLater}
-              className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 rounded-xl font-medium transition-all text-sm"
+              onClick={handleInstall}
+              className="w-full py-4 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-green-500/40"
             >
-              Пізніше
-            </button>
-            <button
-              onClick={handleNever}
-              className="flex-1 py-3 bg-gray-800/50 hover:bg-gray-800 text-gray-500 border border-gray-700/50 rounded-xl font-medium transition-all text-sm"
-            >
-              Не нагадувати
+              Install & Restart
             </button>
           </div>
-        </div>
+        )}
       </motion.div>
     </div>
   )
 }
+
 
 export default function App() {
   return (

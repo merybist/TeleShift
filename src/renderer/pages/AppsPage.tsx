@@ -28,7 +28,8 @@ export default function AppsPage() {
   async function addApp() {
     const path = await ipcRenderer.invoke('select-file')
     if (path) {
-      const name = path.split('\\').pop()?.replace('.exe', '') || 'Нова програма'
+      // Handle both Windows (\) and Mac (/) paths, and remove common extensions
+      const name = path.split(/[\\/]/).pop()?.replace(/\.(exe|app|lnk|bat)$/i, '') || 'Нова програма'
       await dbInsert('apps', { device_id: internalId, name, path })
       fetchDeviceAndApps()
     }
@@ -48,7 +49,7 @@ export default function AppsPage() {
         </div>
         <button onClick={addApp} className="px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl transition-all font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2">
           <FolderPlus size={20} />
-          Додати .exe
+          Додати програму
         </button>
       </div>
       
@@ -87,7 +88,7 @@ export default function AppsPage() {
             >
               <Box size={48} className="mx-auto text-gray-600 mb-4" />
               <p className="text-gray-400 text-xl font-medium">Список програм порожній.</p>
-              <p className="text-gray-500 mt-2">Натисніть "Додати .exe", щоб розпочати.</p>
+              <p className="text-gray-500 mt-2">Натисніть "Додати програму", щоб розпочати.</p>
             </motion.div>
           )}
         </div>

@@ -13,6 +13,7 @@ export default function ConnectionPage() {
   const [hash, setHash] = useState('')
   const [connection, setConnection] = useState<any>(null)
   const [timeLeft, setTimeLeft] = useState(120)
+  const [error, setError] = useState<string | null>(null)
   const botName = 'merycontrolbot'
 
   useEffect(() => {
@@ -58,27 +59,42 @@ export default function ConnectionPage() {
   }, [internalId, connection?.is_active])
 
   async function initDevice() {
-    let currentId = localStorage.getItem('device_id')
-    if (!currentId) {
-      currentId = uuidv4()
-      localStorage.setItem('device_id', currentId)
-    }
-    setDeviceId(currentId)
-
-    let dev = await dbSelectOne('devices', 'id', { device_id: currentId })
-    if (!dev) {
-      const newDev = await dbInsert('devices', {
-        device_id: currentId,
-        name: require('os').hostname()
-      })
-      dev = newDev
-      if (dev) {
-        await dbInsert('settings', { device_id: dev.id })
+    try {
+      let currentId = localStorage.getItem('device_id')
+      if (!currentId) {
+        currentId = uuidv4()
+        localStorage.setItem('device_id', currentId)
       }
+      setDeviceId(currentId)
+
+      let dev = await dbSelectOne('devices', 'id', { device_id: currentId })
+      if (!dev) {
+        console.log('[Connection] Registering new device...')
+        const newDev = await dbInsert('devices', {
+          device_id: currentId,
+          name: 'PC'
+        })
+        dev = newDev
+        if (dev) {
+          await dbInsert('settings', { device_id: dev.id })
+        }
+      }
+      
+      if (dev) {
+        setInternalId(dev.id)
+        setError(null)
+      } else {
+        throw new Error('Could not initialize device in database.')
+      }
+    } catch (err: any) {
+      console.error('[Connection] Init error:', err)
+      setError(err.message || 'Database connection error')
     }
-    if (dev) {
-      setInternalId(dev.id)
-    }
+  }
+
+  async function hardReset() {
+    localStorage.clear()
+    window.location.reload()
   }
 
   async function fetchConnection() {
@@ -159,13 +175,34 @@ export default function ConnectionPage() {
             <p className="text-gray-400 text-sm">Відскануйте QR-код або введіть код</p>
           </div>
 
-          <motion.div 
-            animate={{ boxShadow: ['0px 0px 0px 0px rgba(59,130,246,0)', '0px 0px 30px 10px rgba(59,130,246,0.2)', '0px 0px 0px 0px rgba(59,130,246,0)'] }}
-            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-            className="bg-white p-4 rounded-3xl shadow-inner mb-6 shrink-0"
-          >
-            <QRCodeSVG value={deepLink} size={160} level="H" />
-          </motion.div>
+          {error && (
+            <div className="mb-6 p-4 bg-red-500/20 border border-red-500/30 rounded-2xl w-full text-center">
+              <p className="text-red-400 text-sm mb-2">{error}</p>
+              <button 
+                onClick={hardReset}
+                className="text-xs font-bold text-white bg-red-500/40 hover:bg-red-500/60 px-3 py-1 rounded-lg transition-all"
+              >
+                Скинути все та почати заново
+              </button>
+            </div>
+          )}
+
+          {!error && !hash && (
+             <div className="mb-6 flex flex-col items-center gap-4">
+               <RefreshCw className="animate-spin text-blue-500" size={32} />
+               <p className="text-gray-500 text-sm italic">Ініціалізація бази даних...</p>
+             </div>
+          )}
+
+          {hash && !error && (
+            <motion.div 
+              animate={{ boxShadow: ['0px 0px 0px 0px rgba(59,130,246,0)', '0px 0px 30px 10px rgba(59,130,246,0.2)', '0px 0px 0px 0px rgba(59,130,246,0)'] }}
+              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+              className="bg-white p-4 rounded-3xl shadow-inner mb-6 shrink-0"
+            >
+              <QRCodeSVG value={deepLink} size={160} level="H" />
+            </motion.div>
+          )}
           
           <div className="flex flex-col items-center w-full max-w-sm mx-auto shrink-0">
             <div className="flex justify-between items-end w-full px-2 mb-2">

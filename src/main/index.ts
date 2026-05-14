@@ -1,11 +1,11 @@
-import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, shell, desktopCapturer, screen } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
 import { exec } from 'child_process'
 import si from 'systeminformation'
 import loudness from 'loudness'
-import screenshot from 'screenshot-desktop'
 
 let mainWindow: BrowserWindow | null = null
 let supabase: any = null
@@ -89,9 +89,12 @@ app.on('window-all-closed', () => {
 
 
 ipcMain.handle('select-file', async () => {
+  const isMac = process.platform === 'darwin'
   const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: [{ name: 'Executables', extensions: ['exe'] }]
+    properties: ['openFile', isMac ? 'treatPackageAsDirectory' : 'openFile'].filter((v, i, a) => a.indexOf(v) === i) as any,
+    filters: isMac 
+      ? [{ name: 'Applications', extensions: ['app', '*'] }] 
+      : [{ name: 'Executables', extensions: ['exe'] }]
   })
   return result.filePaths[0]
 })
@@ -107,68 +110,45 @@ ipcMain.on('quit-app', () => {
 })
 
 // ══════════════════════════════════════════════════════════════
-// Auto-update: checks GitHub releases for new versions
+// ══════════════════════════════════════════════════════════════
+// Auto-Update Logic (via electron-updater)
 // ══════════════════════════════════════════════════════════════
 
-ipcMain.handle('get-app-version', () => {
-  return app.getVersion()
-})
+autoUpdater.autoDownload = false // We'll trigger it manually from UI for better UX
 
 ipcMain.handle('check-for-update', async () => {
   try {
-    const https = require('https')
-    const data: string = await new Promise((resolve, reject) => {
-      https.get('https://api.github.com/repos/merybist/TeleShift/releases/latest', {
-        headers: { 'User-Agent': 'TeleShift-Updater' }
-      }, (res: any) => {
-        let body = ''
-        res.on('data', (c: string) => body += c)
-        res.on('end', () => resolve(body))
-      }).on('error', reject)
-    })
-    const release = JSON.parse(data)
-    const latestVersion = (release.tag_name || '').replace(/^v/, '')
-    const currentVersion = app.getVersion()
-    
-    if (!latestVersion) return null
-
-    // Simple version comparison
-    const isNewer = latestVersion !== currentVersion && latestVersion > currentVersion
-    
-    if (isNewer) {
-      // Find the right asset for the current platform
-      let downloadUrl = release.html_url // fallback to release page
-      const assets = release.assets || []
-      for (const asset of assets) {
-        const name = (asset.name || '').toLowerCase()
-        if (process.platform === 'win32' && name.endsWith('.exe')) {
-          downloadUrl = asset.browser_download_url
-          break
-        }
-        if (process.platform === 'darwin' && name.endsWith('.dmg')) {
-          downloadUrl = asset.browser_download_url
-          break
-        }
-      }
-
+    const result = await autoUpdater.checkForUpdates()
+    if (result && result.updateInfo) {
       return {
-        version: latestVersion,
-        currentVersion,
-        downloadUrl,
-        releaseNotes: release.body || '',
-        releaseName: release.name || `v${latestVersion}`
+        version: result.updateInfo.version,
+        releaseNotes: result.updateInfo.releaseNotes
       }
     }
     return null
   } catch (err) {
-    console.log('[Update] Check failed:', err)
+    console.error('[Update Check Failed]', err)
     return null
   }
 })
 
-ipcMain.handle('open-download-url', async (_event, url: string) => {
-  await shell.openExternal(url)
+ipcMain.on('start-download', () => {
+  autoUpdater.downloadUpdate()
 })
+
+ipcMain.on('install-update', () => {
+  isQuitting = true
+  autoUpdater.quitAndInstall()
+})
+
+autoUpdater.on('download-progress', (progressObj) => {
+  mainWindow?.webContents.send('update-progress', progressObj.percent)
+})
+
+autoUpdater.on('update-downloaded', () => {
+  mainWindow?.webContents.send('update-ready')
+})
+
 
 // ══════════════════════════════════════════════════════════════
 // Database initialization — supports both Supabase and raw PG
@@ -480,48 +460,75 @@ async function processCommand(cmd: any) {
 
         switch(cmd.command) {
             case 'shutdown':
-                if (process.platform === 'darwin') exec('shutdown -h now')
+                if (process.platform === 'darwin') exec('osascript -e "tell application \"System Events\" to shut down"')
                 else exec('shutdown /s /t 1')
                 break
             case 'reboot':
-                if (process.platform === 'darwin') exec('shutdown -r now')
+                if (process.platform === 'darwin') exec('osascript -e "tell application \"System Events\" to restart"')
                 else exec('shutdown /r /t 1')
                 break
             case 'lock':
-                if (process.platform === 'darwin') exec('pmset displaysleepnow')
+                if (process.platform === 'darwin') exec('osascript -e "tell application \"System Events\" to sleep" & pmset displaysleepnow')
                 else exec('rundll32.exe user32.dll,LockWorkStation')
                 break
+            case 'check_apps':
+                try {
+                    const apps = cmd.payload?.apps || []
+                    const processes = await si.processes()
+                    const runningPaths = processes.list.map(p => p.path.toLowerCase())
+                    const runningNames = processes.list.map(p => p.name.toLowerCase())
+                    
+                    const statusMap: any = {}
+                    for (const app of apps) {
+                        const appPath = app.path.toLowerCase()
+                        const appName = (appPath.split(/[\\/]/).pop() || '').toLowerCase()
+                        
+                        // Check by full path or just by process name
+                        const isRunning = runningPaths.some(p => p.includes(appPath)) || 
+                                          runningNames.some(n => n === appName || n === appName + '.exe')
+                        
+                        statusMap[app.id] = isRunning
+                    }
+                    result = JSON.stringify(statusMap)
+                } catch (err) {
+                    result = 'Error checking processes'
+                }
+                break
             case 'get_status':
-                const [bat, disk, cpuLoad, mem, gpu, osInfo] = await Promise.all([
-                    si.battery(),
-                    si.fsSize(),
-                    si.currentLoad(),
-                    si.mem(),
-                    si.graphics(),
-                    si.osInfo()
-                ])
-                const cDisk = disk.find(d => d.mount === 'C:') || disk[0]
-                const gpuInfo = gpu.controllers?.[0]
-                const statusData: any = {
-                    cpu_load: Math.round(cpuLoad.currentLoad),
-                    ram_total: Math.round(mem.total / (1024*1024*1024)),
-                    ram_used: Math.round(mem.used / (1024*1024*1024)),
-                    ram_percent: Math.round(mem.used / mem.total * 100),
-                    disk_total: cDisk ? Math.round(cDisk.size / (1024*1024*1024)) : 0,
-                    disk_used: cDisk ? Math.round(cDisk.used / (1024*1024*1024)) : 0,
-                    disk_free: cDisk ? Math.round(cDisk.available / (1024*1024*1024)) : 0,
-                    gpu_name: gpuInfo?.model || 'N/A',
-                    gpu_temp: gpuInfo?.temperatureGpu || null,
-                    gpu_usage: gpuInfo?.utilizationGpu || null,
-                    os: `${osInfo.distro} ${osInfo.release}`,
-                    hostname: osInfo.hostname,
-                    uptime_hours: Math.round(require('os').uptime() / 3600)
+                try {
+                    const [bat, disk, cpuLoad, mem, gpu, osInfo] = await Promise.all([
+                        si.battery().catch(() => ({ hasBattery: false })),
+                        si.fsSize().catch(() => []),
+                        si.currentLoad().catch(() => ({ currentLoad: 0 })),
+                        si.mem().catch(() => ({ total: 0, used: 0 })),
+                        si.graphics().catch(() => ({ controllers: [] })),
+                        si.osInfo().catch(() => ({ distro: 'Unknown', release: '', hostname: 'PC' }))
+                    ])
+                    const cDisk = (disk as any[]).find(d => d.mount === 'C:') || disk[0]
+                    const gpuInfo = (gpu as any).controllers?.[0]
+                    const statusData: any = {
+                        cpu_load: Math.round((cpuLoad as any).currentLoad || 0),
+                        ram_total: Math.round(((mem as any).total || 0) / (1024*1024*1024)),
+                        ram_used: Math.round(((mem as any).used || 0) / (1024*1024*1024)),
+                        ram_percent: Math.round(((mem as any).used / (mem as any).total * 100) || 0),
+                        disk_total: cDisk ? Math.round(cDisk.size / (1024*1024*1024)) : 0,
+                        disk_used: cDisk ? Math.round(cDisk.used / (1024*1024*1024)) : 0,
+                        disk_free: cDisk ? Math.round(cDisk.available / (1024*1024*1024)) : 0,
+                        gpu_name: gpuInfo?.model || 'N/A',
+                        gpu_temp: gpuInfo?.temperatureGpu || null,
+                        gpu_usage: gpuInfo?.utilizationGpu || null,
+                        os: `${(osInfo as any).distro} ${(osInfo as any).release}`,
+                        hostname: (osInfo as any).hostname,
+                        uptime_seconds: Math.round(require('os').uptime())
+                    }
+                    if ((bat as any).hasBattery) {
+                        statusData.battery = (bat as any).percent
+                        statusData.battery_charging = (bat as any).isCharging
+                    }
+                    result = JSON.stringify(statusData)
+                } catch (e: any) {
+                    result = JSON.stringify({ error: e.message })
                 }
-                if (bat.hasBattery) {
-                    statusData.battery = bat.percent
-                    statusData.battery_charging = bat.isCharging
-                }
-                result = JSON.stringify(statusData)
                 break
             case 'get_volume':
                 const vol = await loudness.getVolume()
@@ -542,7 +549,19 @@ async function processCommand(cmd: any) {
                 result = JSON.stringify({ volume: newVol, muted: newMute })
                 break
             case 'take_screenshot':
-                const imgBuffer = await screenshot()
+                const primaryDisplay = screen.getPrimaryDisplay()
+                const { width, height } = primaryDisplay.size
+                
+                const sources = await desktopCapturer.getSources({
+                    types: ['screen'],
+                    thumbnailSize: { width, height }
+                })
+                
+                const source = sources[0] // Primary screen
+                if (!source) throw new Error('No screen source found')
+                
+                const imgBuffer = source.thumbnail.toPNG()
+                
                 if (dbMode === 'supabase' && supabase) {
                     // Upload to Supabase Storage and return public URL
                     const fileName = `screenshot_${Date.now()}.png`
