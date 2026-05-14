@@ -21,19 +21,23 @@ async def stat_all(call: CallbackQuery, device_id: str):
     else:
         try:
             d = json.loads(result)
+            hostname = d.get('hostname', 'PC').replace('<', '&lt;').replace('>', '&gt;')
+            os_info = d.get('os', 'N/A').replace('<', '&lt;').replace('>', '&gt;')
+            
             lines = [
-                "📊 *Статус ПК*\n",
-                f"🖥 *{d.get('hostname', 'PC')}*",
-                f"💻 {d.get('os', 'N/A')}\n",
-                f"⚡ ЦП: *{d.get('cpu_load', 0)}%*",
-                f"🧠 RAM: *{d.get('ram_used', 0)}* / {d.get('ram_total', 0)} GB ({d.get('ram_percent', 0)}%)",
-                f"💾 Диск: *{d.get('disk_used', 0)}* / {d.get('disk_total', 0)} GB (вільно {d.get('disk_free', 0)} GB)",
+                f"📊 <b>Статус ПК</b>\n",
+                f"🖥 <b>{hostname}</b>",
+                f"💻 {os_info}\n",
+                f"⚡ ЦП: <b>{d.get('cpu_load', 0)}%</b>",
+                f"🧠 RAM: <b>{d.get('ram_used', 0)}</b> / {d.get('ram_total', 0)} GB ({d.get('ram_percent', 0)}%)",
+                f"💾 Диск: <b>{d.get('disk_used', 0)}</b> / {d.get('disk_total', 0)} GB (вільно {d.get('disk_free', 0)} GB)",
             ]
 
             # GPU
             gpu_name = d.get('gpu_name', 'N/A')
             if gpu_name and gpu_name != 'N/A':
-                gpu_line = f"🎮 GPU: *{gpu_name}*"
+                gpu_name = gpu_name.replace('<', '&lt;').replace('>', '&gt;')
+                gpu_line = f"🎮 GPU: <b>{gpu_name}</b>"
                 if d.get('gpu_usage') is not None:
                     gpu_line += f" ({d['gpu_usage']}%)"
                 if d.get('gpu_temp') is not None:
@@ -44,7 +48,7 @@ async def stat_all(call: CallbackQuery, device_id: str):
             battery = d.get('battery')
             if battery is not None and isinstance(battery, (int, float)):
                 charge_icon = "⚡" if d.get('battery_charging') else ""
-                lines.append(f"\n🔋 Батарея: *{battery}%* {charge_icon}")
+                lines.append(f"\n🔋 Батарея: <b>{battery}%</b> {charge_icon}")
 
             # Uptime
             uptime = d.get('uptime_hours', 0)
@@ -54,9 +58,9 @@ async def stat_all(call: CallbackQuery, device_id: str):
                 lines.append(f"\n⏱ Аптайм: {uptime}г")
 
             text = "\n".join(lines)
-            await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="Markdown")
+            await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="HTML")
         except Exception as e:
-            await call.message.edit_text(f"❌ Помилка обробки статусних даних: {e}", reply_markup=back_kb())
+            await call.message.edit_text(f"❌ Помилка обробки статусних даних: {str(e)[:100]}", reply_markup=back_kb())
 
 @router.callback_query(F.data == "stat_sound")
 async def stat_sound(call: CallbackQuery, device_id: str):
