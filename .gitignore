@@ -1,7 +1,29 @@
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Node / Electron
 node_modules/
 dist/
 out/
-.env
-.DS_Store
 release/
 build/
+npm-debug.log
+yarn-error.log
+
+# Python / Bot (for safety)
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Screenshots & Logs
+*.png
+*.jpg
+*.jpeg
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
