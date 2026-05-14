@@ -1,0 +1,99 @@
+{
+  "name": "TeleShift",
+  "author": "merybist",
+  "description": "Remote PC controller desktop via Telegram.",
+  "version": "2026.5.15-1",
+  "main": "./out/main/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/merybist/TeleShift"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:all": "npm run build && electron-builder --win --mac",
+    "deploy": "node scripts/release.js",
+    "publish-only": "node scripts/publish.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.0",
+    "electron-updater": "^6.8.3",
+    "framer-motion": "^12.38.0",
+    "loudness": "^0.4.1",
+    "lucide-react": "^0.378.0",
+    "nanoid": "^5.0.7",
+    "pg": "^8.11.5",
+    "qrcode.react": "^3.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.0",
+    "screenshot-desktop": "^1.15.0",
+    "systeminformation": "^5.22.8",
+    "uuid": "^9.0.1",
+    "ws": "^8.20.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/uuid": "^9.0.8",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.19",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11"
+  },
+  "build": {
+    "appId": "com.teleshift.app",
+    "productName": "TeleShift",
+    "icon": "resources/icon.png",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "merybist",
+        "repo": "TeleShift"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/screenshot-desktop/**",
+      "node_modules/loudness/**"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "resources/icon.png",
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.png",
+      "category": "public.app-category.utilities"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ]
+  }
+}
