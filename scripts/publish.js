@@ -61,7 +61,17 @@ async function run() {
             // Get current branch name
             const branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
             
-            execSync(`git add . && git commit -m "chore: release v${version}" && git push origin ${branch}`, { stdio: 'inherit' });
+            console.log('Pushing code changes (non-fatal)...');
+            try {
+                execSync(`git add . && git commit -m "chore: release v${version}"`, { stdio: 'ignore' });
+            } catch(e) {}
+            
+            try {
+                execSync(`git push origin ${branch}`, { stdio: 'inherit' });
+            } catch (e) {
+                console.warn('⚠️ Git push failed, but continuing to GitHub Release...');
+            }
+
             execSync(`gh release create v${version} ${exeFile} --title "TeleShift Release v${version}" --notes-file release_notes.md`, { stdio: 'inherit' });
             
             console.log('\n✨ SUCCESS! Version pushed to GitHub.');
