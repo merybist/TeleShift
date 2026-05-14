@@ -69,7 +69,9 @@
         "nsis"
       ],
       "icon": "resources/icon.png",
-      "artifactName": "${productName} Setup ${version}.${ext}"
+      "artifactName": "${productName} Setup ${version}.${ext}",
+      "certificateFile": "${env.WIN_CERT_PATH}",
+      "certificatePassword": "${env.WIN_CERT_PASSWORD}"
     },
     "mac": {
       "target": [

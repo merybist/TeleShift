@@ -11,12 +11,12 @@ router = Router()
 async def menu_launch(call: CallbackQuery, device_id: str):
     rows = await db.select("apps", "*", {"device_id": device_id})
     if not rows:
-        await call.message.edit_text("Немає програм. Додайте їх через додаток на ПК.", reply_markup=back_kb())
+        await call.message.edit_text("No apps found. Add them via the PC agent.", reply_markup=back_kb())
         return
     
-    await call.message.edit_text("⏳ Перевіряю статус програм...")
+    await call.message.edit_text("⏳ Checking app statuses...")
     
-    # Запитуємо статус у ПК
+    # Request app status from PC
     payload = {"apps": [{"id": r["id"], "path": r["path"]} for r in rows]}
     cmd_id = await push_command(device_id, "check_apps", payload)
     result = await wait_for_result(cmd_id, timeout=10)
@@ -28,7 +28,7 @@ async def menu_launch(call: CallbackQuery, device_id: str):
         except:
             pass
             
-    await call.message.edit_text("🚀 Запуск програм:", reply_markup=apps_kb(rows, status_map))
+    await call.message.edit_text("🚀 App Launcher:", reply_markup=apps_kb(rows, status_map))
 
 @router.callback_query(F.data.startswith("launch_"))
 async def do_launch(call: CallbackQuery, device_id: str):
@@ -38,15 +38,15 @@ async def do_launch(call: CallbackQuery, device_id: str):
         app_path = rows[0]["path"]
         app_name = rows[0]["name"]
 
-        await call.message.edit_text(f"⏳ Запускаю {app_name}...")
-        await log_action(device_id, call.from_user.id, call.from_user.username, f"Запустив {app_name}")
+        await call.message.edit_text(f"⏳ Launching {app_name}...")
+        await log_action(device_id, call.from_user.id, call.from_user.username, f"Launched {app_name}")
 
         cmd_id = await push_command(device_id, "launch_app", {"path": app_path})
         result = await wait_for_result(cmd_id)
 
         if result == "timeout":
-             await call.message.edit_text("❌ Немає відповіді від ПК", reply_markup=back_kb())
+             await call.message.edit_text("❌ No response from PC", reply_markup=back_kb())
         elif result == "success":
-             await call.message.edit_text(f"✅ {app_name} запущена", reply_markup=back_kb())
+             await call.message.edit_text(f"✅ {app_name} launched", reply_markup=back_kb())
         else:
-             await call.message.edit_text(f"Помилка: {result}", reply_markup=back_kb())
+             await call.message.edit_text(f"Error: {result}", reply_markup=back_kb())

@@ -16,18 +16,18 @@ async def cmd_start(message: Message, is_connected: bool, state: FSMContext):
         hash_token = args[1]
         await process_hash(message, hash_token)
     elif is_connected:
-        await message.answer("Головне меню", reply_markup=main_menu_kb())
+        await message.answer("Main Menu", reply_markup=main_menu_kb())
     else:
-        await message.answer("Ваш акаунт не підключено до жодного ПК.", reply_markup=connect_info_kb())
+        await message.answer("Your account is not connected to any PC.", reply_markup=connect_info_kb())
 
 @router.callback_query(F.data == "connect_info")
 async def connect_info(call: CallbackQuery):
-    text = "Для підключення відскануйте QR-код в додатку або введіть хеш."
+    text = "To connect, scan the QR code in the app or enter the hash manually."
     await call.message.edit_text(text, reply_markup=connect_info_kb())
 
 @router.callback_query(F.data == "enter_hash")
 async def ask_hash(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text("Введіть хеш (12 символів):")
+    await call.message.edit_text("Enter the hash (12 characters):")
     await state.set_state(ConnectForm.hash)
 
 @router.message(ConnectForm.hash)
@@ -36,17 +36,17 @@ async def receive_hash(message: Message, state: FSMContext):
     await state.clear()
 
 async def process_hash(message: Message, hash_token: str):
-    # Шукаємо підключення по хешу
+    # Find connection by hash token
     rows = await db.select("connections", "*", {"hash_token": hash_token})
 
     if not rows:
-        await message.answer("❌ Невірний токен або токен вже недійсний.")
+        await message.answer("❌ Invalid token or token has expired.")
         return
 
     conn = rows[0]
 
     if conn["is_active"] and conn["user_id"] != message.from_user.id:
-        await message.answer("❌ Цей токен вже використовується іншим користувачем. Згенеруйте новий в додатку.")
+        await message.answer("❌ This token is already in use by another user. Generate a new one in the app.")
         return
 
     await db.update("connections", {
@@ -56,5 +56,5 @@ async def process_hash(message: Message, hash_token: str):
         "first_name": message.from_user.first_name
     }, {"id": conn["id"]})
 
-    await log_action(conn["device_id"], message.from_user.id, message.from_user.username, "Підключив пристрій")
-    await message.answer("✅ ПК успішно підключено!\nГоловне меню:", reply_markup=main_menu_kb())
+    await log_action(conn["device_id"], message.from_user.id, message.from_user.username, "Connected device")
+    await message.answer("✅ PC successfully connected!\nMain Menu:", reply_markup=main_menu_kb())

@@ -10,7 +10,7 @@ router = Router()
 async def menu_settings(call: CallbackQuery, device_id: str):
     rows = await db.select("settings", "*", {"device_id": device_id})
     settings = rows[0] if rows else {}
-    await call.message.edit_text("⚙️ Налаштування", reply_markup=settings_kb(settings))
+    await call.message.edit_text("⚙️ Settings", reply_markup=settings_kb(settings))
 
 @router.callback_query(F.data == "set_notif")
 async def toggle_notif(call: CallbackQuery, device_id: str):
@@ -21,8 +21,8 @@ async def toggle_notif(call: CallbackQuery, device_id: str):
     
     settings_rows = await db.select("settings", "*", {"device_id": device_id})
     settings = settings_rows[0] if settings_rows else {}
-    await call.message.edit_text("⚙️ Налаштування", reply_markup=settings_kb(settings))
-    await call.answer("Сповіщення оновлено")
+    await call.message.edit_text("⚙️ Settings", reply_markup=settings_kb(settings))
+    await call.answer("Notifications updated")
 
 @router.callback_query(F.data == "set_qual")
 async def toggle_quality(call: CallbackQuery, device_id: str):
@@ -34,8 +34,8 @@ async def toggle_quality(call: CallbackQuery, device_id: str):
     
     settings_rows = await db.select("settings", "*", {"device_id": device_id})
     settings = settings_rows[0] if settings_rows else {}
-    await call.message.edit_text("⚙️ Налаштування", reply_markup=settings_kb(settings))
-    await call.answer(f"Якість змінена на {settings.get('screenshot_quality')}")
+    await call.message.edit_text("⚙️ Settings", reply_markup=settings_kb(settings))
+    await call.answer(f"Quality changed to {settings.get('screenshot_quality')}")
 
 @router.callback_query(F.data == "set_lang")
 async def toggle_lang(call: CallbackQuery, device_id: str):
@@ -47,8 +47,8 @@ async def toggle_lang(call: CallbackQuery, device_id: str):
     
     settings_rows = await db.select("settings", "*", {"device_id": device_id})
     settings = settings_rows[0] if settings_rows else {}
-    await call.message.edit_text("⚙️ Налаштування", reply_markup=settings_kb(settings))
-    await call.answer(f"Мова змінена на {settings.get('language').upper()}")
+    await call.message.edit_text("⚙️ Settings", reply_markup=settings_kb(settings))
+    await call.answer(f"Language changed to {settings.get('language').upper()}")
 
 @router.callback_query(F.data == "set_online_notif")
 async def toggle_online_notif(call: CallbackQuery, device_id: str):
@@ -59,37 +59,37 @@ async def toggle_online_notif(call: CallbackQuery, device_id: str):
     
     settings_rows = await db.select("settings", "*", {"device_id": device_id})
     settings = settings_rows[0] if settings_rows else {}
-    await call.message.edit_text("⚙️ Налаштування", reply_markup=settings_kb(settings))
-    await call.answer("Онлайн-сповіщення змінено")
+    await call.message.edit_text("⚙️ Settings", reply_markup=settings_kb(settings))
+    await call.answer("Online notification changed")
 
 @router.callback_query(F.data == "disconnect_pc")
 async def disconnect_pc(call: CallbackQuery):
-    await call.message.edit_text("Відключити ПК від вашого акаунту?", reply_markup=confirm_kb("disc"))
+    await call.message.edit_text("Disconnect PC from your account?", reply_markup=confirm_kb("disc"))
     await call.answer()
 
 @router.callback_query(F.data == "disc_yes")
 async def do_disconnect(call: CallbackQuery, device_id: str):
     await db.update("connections", {"is_active": False}, {"device_id": device_id, "user_id": call.from_user.id})
-    await log_action(device_id, call.from_user.id, call.from_user.username, "Відключив ПК")
-    await call.message.edit_text("ПК успішно відключено від вашого акаунту.")
-    await call.answer("ПК відключено")
+    await log_action(device_id, call.from_user.id, call.from_user.username, "Disconnected PC")
+    await call.message.edit_text("PC successfully disconnected from your account.")
+    await call.answer("PC disconnected")
 
 @router.callback_query(F.data == "sys_info")
 async def sys_info(call: CallbackQuery, device_id: str):
     rows = await db.select("connections", "connected_at", {"device_id": device_id, "user_id": call.from_user.id})
-    conn_time = rows[0].get("connected_at") if rows else "Невідомо"
+    conn_time = rows[0].get("connected_at") if rows else "Unknown"
     dev = await db.select_one("devices", "is_online, last_seen_at, name", {"id": device_id})
-    online_status = "🟢 Онлайн" if dev and dev.get("is_online") else "🔴 Офлайн"
-    last_seen = dev.get("last_seen_at", "Невідомо") if dev else "Невідомо"
-    dev_name = dev.get("name", "ПК") if dev else "ПК"
+    online_status = "🟢 Online" if dev and dev.get("is_online") else "🔴 Offline"
+    last_seen = dev.get("last_seen_at", "Unknown") if dev else "Unknown"
+    dev_name = dev.get("name", "PC") if dev else "PC"
 
     text = (
-        f"ℹ️ <b>Інфо</b>\n\n"
-        f"🖥 Назва: <b>{dev_name}</b>\n"
-        f"📡 Статус: {online_status}\n"
-        f"🕐 Останній раз: {last_seen}\n"
-        f"🔗 Підключено з: {conn_time}\n"
-        f"📦 Версія: 1.0.5"
+        f"ℹ️ <b>Info</b>\n\n"
+        f"🖥 Name: <b>{dev_name}</b>\n"
+        f"📡 Status: {online_status}\n"
+        f"🕐 Last seen: {last_seen}\n"
+        f"🔗 Connected since: {conn_time}\n"
+        f"📦 Version: 1.0.5"
     )
     await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="HTML")
     await call.answer()
