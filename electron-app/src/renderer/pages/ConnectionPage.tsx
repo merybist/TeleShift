@@ -173,14 +173,14 @@ export default function ConnectionPage() {
           >
             <CheckCircle2 size={48} className="text-green-400" />
           </motion.div>
-          <h3 className="text-3xl font-bold text-green-400 mb-2">Підключено</h3>
-          <p className="text-xl text-gray-300">Користувач: <span className="font-bold text-white">@{connection.username}</span></p>
+          <h3 className="text-3xl font-bold text-green-400 mb-2">Connected</h3>
+          <p className="text-xl text-gray-300">User: <span className="font-bold text-white">@{connection.username}</span></p>
           <button 
             onClick={resetConnection} 
             className="mt-10 px-8 py-4 bg-red-500/20 hover:bg-red-500/40 text-red-400 border border-red-500/30 rounded-2xl transition-all w-full font-bold shadow-lg flex items-center justify-center gap-2"
           >
             <RefreshCw size={20} />
-            Скинути підключення
+            Reset Connection
           </button>
         </motion.div>
       ) : (
@@ -192,8 +192,8 @@ export default function ConnectionPage() {
           className="flex flex-col items-center bg-gray-800/40 p-6 rounded-3xl shadow-2xl border border-gray-700/50 w-full flex-1 justify-center min-h-0"
         >
           <div className="text-center mb-4 shrink-0">
-            <h2 className="text-2xl font-black mb-1 text-white">Зв'язок з ботом</h2>
-            <p className="text-gray-400 text-sm">Відскануйте QR-код або введіть код</p>
+            <h2 className="text-2xl font-black mb-1 text-white">Bot Connection</h2>
+            <p className="text-gray-400 text-sm">Scan the QR code or enter the code</p>
           </div>
 
           {error && (
@@ -203,7 +203,7 @@ export default function ConnectionPage() {
                 onClick={hardReset}
                 className="text-xs font-bold text-white bg-red-500/40 hover:bg-red-500/60 px-3 py-1 rounded-lg transition-all"
               >
-                Скинути все та почати заново
+                Reset and start over
               </button>
             </div>
           )}
@@ -211,7 +211,7 @@ export default function ConnectionPage() {
           {!error && !hash && (
              <div className="mb-6 flex flex-col items-center gap-4">
                <RefreshCw className="animate-spin text-blue-500" size={32} />
-               <p className="text-gray-500 text-sm italic">Ініціалізація бази даних...</p>
+               <p className="text-gray-500 text-sm italic">Initializing database...</p>
              </div>
           )}
 
@@ -227,7 +227,7 @@ export default function ConnectionPage() {
           
           <div className="flex flex-col items-center w-full max-w-sm mx-auto shrink-0">
             <div className="flex justify-between items-end w-full px-2 mb-2">
-              <span className="text-xs text-gray-400 uppercase tracking-widest font-bold">Унікальний код</span>
+              <span className="text-xs text-gray-400 uppercase tracking-widest font-bold">Unique Code</span>
               <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 px-2 py-1 rounded-md">{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}</span>
             </div>
             
@@ -246,7 +246,7 @@ export default function ConnectionPage() {
               className="px-6 py-3 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 border border-blue-500/30 rounded-2xl transition-all w-full font-bold flex items-center justify-center gap-2"
             >
               <RefreshCw size={18} />
-              Оновити хеш вручну
+              Refresh hash manually
             </button>
           </div>
         </motion.div>
@@ -260,8 +260,8 @@ export default function ConnectionPage() {
         className="mt-8 pt-6 border-t border-gray-800/50 flex items-center justify-between px-2"
       >
         <div className="flex flex-col">
-          <span className="text-sm font-bold text-gray-200">Автозапуск</span>
-          <span className="text-xs text-gray-500">Запускати програму при старті системи</span>
+          <span className="text-sm font-bold text-gray-200">Auto-Start</span>
+          <span className="text-xs text-gray-500">Launch app on system startup</span>
         </div>
         
         <button 

@@ -101,6 +101,16 @@ You have two options:
 
 ---
 
+## 🔒 Code Signing
+
+This application uses a **self-signed certificate** for code signing. As an open-source project without a paid EV certificate ($400+/year), Windows SmartScreen may display a warning during the first launch.
+
+### How to run:
+1. Click **"More info"** in the warning window.
+2. Click **"Run anyway"**.
+
+This is standard practice for independent developers. You can always audit the source code in this repository.
+
 ## 🛡️ Security & Privacy
 TeleShift does not expose your local PC to the public internet via port forwarding. It securely listens for authorized commands pushed to the database real-time channel (Supabase WebSocket or PostgreSQL `NOTIFY`), preventing external attacks.
 

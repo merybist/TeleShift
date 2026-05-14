@@ -54,9 +54,9 @@ function createTray() {
   const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
   tray = new Tray(icon)
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Відкрити налаштування', click: () => mainWindow?.show() },
+    { label: 'Open Settings', click: () => mainWindow?.show() },
     { type: 'separator' },
-    { label: 'Вийти', click: () => {
+    { label: 'Quit', click: () => {
         isQuitting = true
         app.quit()
       }
@@ -96,7 +96,7 @@ ipcMain.handle('select-file', async () => {
       { name: 'Applications/Executables', extensions: isMac ? ['app', 'exe', 'sh', 'command'] : ['exe', 'lnk', 'bat', 'cmd'] },
       { name: 'All Files', extensions: ['*'] }
     ],
-    title: isMac ? 'Оберіть програму або файл' : 'Выберите программу або файл'
+    title: isMac ? 'Select an application or file' : 'Select an application or file'
   })
   
   if (result.canceled || result.filePaths.length === 0) return null
@@ -610,7 +610,7 @@ async function processCommand(cmd: any) {
                 result = JSON.stringify({ volume: vol, muted })
                 break
             case 'show_message':
-                const msg = cmd.payload?.text || 'Повідомлення від TeleShift'
+                const msg = cmd.payload?.text || 'Message from TeleShift'
                 dialog.showMessageBox(mainWindow!, {
                     type: 'info',
                     title: 'TeleShift Message',

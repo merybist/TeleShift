@@ -71,11 +71,11 @@ async function run() {
         const releaseNotes = `
 ## TeleShift Stable Release v${versionForTag}
 
-### 🔄 Що нового:
-*   **💓 Heartbeat System:** Тепер статус "Онлайн" відображається максимально точно в реальному часі.
-*   **🚀 Автозапуск:** Додана кнопка в налаштуваннях для запуску програми при старті Windows/macOS.
-*   **✅ Індикатори процесів:** Покращено алгоритм виявлення запущених ігор (наприклад, Majestic Launcher).
-*   **💬 Повідомлення на екран:** Можливість надсилати текст прямо на монітор ПК через бота.
+### 🔄 What's New:
+*   **💓 Heartbeat System:** Real-time online status tracking with precise accuracy.
+*   **🚀 Auto-Start:** Added a toggle in settings to launch the app on system startup.
+*   **✅ Process Indicators:** Improved detection of running apps (e.g., Majestic Launcher).
+*   **💬 Screen Messages:** Send text messages directly to the PC screen via the bot.
         `.trim();
 
         fs.writeFileSync('release_notes.md', releaseNotes);
@@ -89,7 +89,7 @@ async function run() {
             );
             
             if (artifacts.length === 0) {
-                console.error(`❌ Не знайдено .exe артефактів у dist/`);
+                console.error(`❌ No .exe artifacts found in dist/`);
                 process.exit(1);
             }
 

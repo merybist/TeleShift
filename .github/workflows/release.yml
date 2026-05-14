@@ -1,0 +1,58 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - '*.*.*.*'
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: electron-app/package-lock.json
+
+      - name: Install Dependencies
+        run: |
+          cd electron-app
+          npm install
+
+      - name: Decode Certificate
+        shell: pwsh
+        run: |
+          $certBase64 = "${{ secrets.WIN_CERT }}"
+          $certPath = "electron-app/certificate.pfx"
+          [IO.File]::WriteAllBytes("$pwd/$certPath", [Convert]::FromBase64String($certBase64))
+          echo "WIN_CERT_PATH=$pwd/$certPath" >> $env:GITHUB_ENV
+        env:
+          WIN_CERT: ${{ secrets.WIN_CERT }}
+
+      - name: Build and Sign
+        run: |
+          cd electron-app
+          npm run build:win
+        env:
+          WIN_CERT_PATH: ${{ env.WIN_CERT_PATH }}
+          WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release and Upload Artifacts
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            electron-app/dist/*.exe
+            electron-app/dist/*.blockmap
+          body_path: electron-app/release_notes.md
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

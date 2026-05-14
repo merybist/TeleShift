@@ -29,7 +29,7 @@ async def wait_for_result(command_id: str, timeout: int = 15):
             if rows[0]["status"] == "completed":
                 return rows[0]["result"]
             elif rows[0]["status"] == "error":
-                return f"Помилка: {rows[0].get('result', 'Невідома помилка')}"
+                return f"Error: {rows[0].get('result', 'Unknown error')}"
     return "timeout"
 
 

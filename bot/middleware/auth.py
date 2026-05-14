@@ -7,7 +7,7 @@ class AuthMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
         user_id = event.from_user.id
 
-        # Перевіряємо чи юзер підключений до якогось ПК
+        # Check if user is connected to any PC
         rows = await db.select("connections", "device_id", {"user_id": user_id, "is_active": True})
         is_connected = False
         device_id = None
@@ -19,15 +19,15 @@ class AuthMiddleware(BaseMiddleware):
         data['is_connected'] = is_connected
         data['device_id'] = device_id
 
-        # Винятки для /start та кнопок підключення
+        # Exceptions for /start and connection buttons
         if getattr(event, 'text', '').startswith('/start') or getattr(event, 'data', '') in ['connect_info', 'enter_hash']:
             return await handler(event, data)
 
         if not is_connected:
             if hasattr(event, 'message'):
-                await event.message.answer("Ваш акаунт не підключено до жодного ПК.", reply_markup=not_connected_kb())
+                await event.message.answer("Your account is not connected to any PC.", reply_markup=not_connected_kb())
             else:
-                await event.message.edit_text("Ваш акаунт не підключено до жодного ПК.", reply_markup=not_connected_kb())
+                await event.message.edit_text("Your account is not connected to any PC.", reply_markup=not_connected_kb())
             return
 
         return await handler(event, data)

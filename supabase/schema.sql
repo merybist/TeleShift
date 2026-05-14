@@ -1,4 +1,4 @@
-CREATE TABLE devices (
+CREATE TABLE IF NOT EXISTS devices (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id uuid UNIQUE NOT NULL,
     name text,
@@ -7,7 +7,7 @@ CREATE TABLE devices (
     created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE connections (
+CREATE TABLE IF NOT EXISTS connections (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id uuid REFERENCES devices(id) ON DELETE CASCADE,
     hash_token text UNIQUE NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE connections (
     created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE apps (
+CREATE TABLE IF NOT EXISTS apps (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id uuid REFERENCES devices(id) ON DELETE CASCADE,
     name text NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE apps (
     created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE settings (
+CREATE TABLE IF NOT EXISTS settings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id uuid REFERENCES devices(id) ON DELETE CASCADE UNIQUE,
     notify_on_command boolean DEFAULT true,
@@ -39,7 +39,7 @@ CREATE TABLE settings (
     language text DEFAULT 'ua'
 );
 
-CREATE TABLE logs (
+CREATE TABLE IF NOT EXISTS logs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id uuid REFERENCES devices(id) ON DELETE CASCADE,
     user_id bigint,
@@ -48,7 +48,7 @@ CREATE TABLE logs (
     created_at timestamptz DEFAULT now()
 );
 
-CREATE TABLE device_commands (
+CREATE TABLE IF NOT EXISTS device_commands (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id uuid REFERENCES devices(id) ON DELETE CASCADE,
     command text NOT NULL,
@@ -59,21 +59,30 @@ CREATE TABLE device_commands (
     updated_at timestamptz DEFAULT now()
 );
 
--- ══════════════════════════════════════════════════════════════
--- Supabase Realtime (use this only if deploying on Supabase)
--- ══════════════════════════════════════════════════════════════
-ALTER PUBLICATION supabase_realtime ADD TABLE connections;
-ALTER PUBLICATION supabase_realtime ADD TABLE apps;
-ALTER PUBLICATION supabase_realtime ADD TABLE logs;
-ALTER PUBLICATION supabase_realtime ADD TABLE device_commands;
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE connections;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- ══════════════════════════════════════════════════════════════
--- Raw PostgreSQL Realtime via LISTEN/NOTIFY
--- These triggers fire NOTIFY events so the Electron desktop
--- agent can receive commands without Supabase Realtime.
--- ══════════════════════════════════════════════════════════════
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE apps;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- Notify on new command insert
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE logs;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE device_commands;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 CREATE OR REPLACE FUNCTION notify_new_command()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -88,6 +97,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS device_commands_notify ON device_commands;
 CREATE TRIGGER device_commands_notify
 AFTER INSERT ON device_commands
 FOR EACH ROW EXECUTE FUNCTION notify_new_command();
@@ -101,6 +111,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS connections_notify ON connections;
 CREATE TRIGGER connections_notify
 AFTER INSERT OR UPDATE ON connections
 FOR EACH ROW EXECUTE FUNCTION notify_connection_change();
@@ -114,6 +125,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS apps_notify ON apps;
 CREATE TRIGGER apps_notify
 AFTER INSERT OR UPDATE OR DELETE ON apps
 FOR EACH ROW EXECUTE FUNCTION notify_apps_change();
@@ -127,6 +139,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS logs_notify ON logs;
 CREATE TRIGGER logs_notify
 AFTER INSERT ON logs
 FOR EACH ROW EXECUTE FUNCTION notify_log_insert();

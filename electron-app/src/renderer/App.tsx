@@ -11,9 +11,9 @@ import LogsPage from './pages/LogsPage'
 function Sidebar() {
   const location = useLocation()
   const links = [
-    { path: '/', icon: <QrCode size={20} />, label: 'Підключення' },
-    { path: '/apps', icon: <LayoutGrid size={20} />, label: 'Програми' },
-    { path: '/logs', icon: <Terminal size={20} />, label: 'Журнал' }
+    { path: '/', icon: <QrCode size={20} />, label: 'Connection' },
+    { path: '/apps', icon: <LayoutGrid size={20} />, label: 'Apps' },
+    { path: '/logs', icon: <Terminal size={20} />, label: 'Logs' }
   ]
 
   return (
@@ -113,19 +113,19 @@ function WarningModal() {
           <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center shrink-0 border border-blue-500/30">
             <span className="text-2xl">✨</span>
           </div>
-          <h2 className="text-2xl font-bold text-white">Увага!</h2>
+          <h2 className="text-2xl font-bold text-white">Warning!</h2>
         </div>
         
         <p className="text-gray-300 text-base leading-relaxed mb-6">
-          Ця програма — інструмент для віддаленого керування вашим ПК, а <strong className="text-white">не RAT чи вірус</strong>.<br/>
-          Якщо ви завантажили її <strong>не з</strong> офіційних сторінок:
+          This app is a remote PC control tool, <strong className="text-white">not a RAT or virus</strong>.<br/>
+          If you downloaded it from <strong>unofficial</strong> sources:
         </p>
 
         <div className="flex gap-4 mb-8">
           <a href="https://github.com/merybist" target="_blank" rel="noreferrer" className="relative flex-1 bg-gray-800/40 hover:bg-gray-800 border border-gray-700 rounded-2xl p-5 overflow-hidden group transition-all text-left">
             <Github size={120} className="absolute -bottom-8 -right-8 text-white opacity-10 group-hover:opacity-20 transition-all duration-500 group-hover:scale-110" />
             <div className="relative z-10 flex flex-col">
-              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Офіційний GitHub</span>
+              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Official GitHub</span>
               <span className="text-white font-bold text-sm">github.com/merybist</span>
             </div>
           </a>
@@ -133,14 +133,14 @@ function WarningModal() {
           <a href="https://merybist.com" target="_blank" rel="noreferrer" className="relative flex-1 bg-indigo-900/20 hover:bg-indigo-900/40 border border-indigo-500/20 rounded-2xl p-5 overflow-hidden group transition-all text-left">
             <img src={fluttershyImg} alt="Fluttershy" className="absolute right-0 top-1/2 -translate-y-1/2 w-32 h-32 object-contain opacity-[0.35] mix-blend-screen group-hover:opacity-[0.5] transition-all duration-500 group-hover:scale-110" style={{ maskImage: 'radial-gradient(circle at center, black 45%, transparent 75%)', WebkitMaskImage: 'radial-gradient(circle at center, black 45%, transparent 75%)' }} />
             <div className="relative z-10 flex flex-col">
-              <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest mb-1">Сайт Автора</span>
+              <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest mb-1">Author's Website</span>
               <span className="text-white font-bold text-sm">merybist.com</span>
             </div>
           </a>
         </div>
 
         <p className="text-center mb-8">
-          <strong className="text-red-400 uppercase tracking-widest font-black text-xl">То вас наєбали!</strong>
+          <strong className="text-red-400 uppercase tracking-widest font-black text-xl">Then you've been scammed!</strong>
         </p>
 
         <div className="flex gap-4">
@@ -148,13 +148,13 @@ function WarningModal() {
             onClick={handleAccept}
             className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-blue-500/20"
           >
-            Так, поняв
+            Got it
           </button>
           <button 
             onClick={handleQuit}
             className="flex-1 py-4 bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 border border-red-500/30 rounded-xl font-bold transition-all"
           >
-            Вийти
+            Quit
           </button>
         </div>
       </motion.div>

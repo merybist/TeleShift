@@ -29,7 +29,7 @@ export default function AppsPage() {
     const path = await ipcRenderer.invoke('select-file')
     if (path) {
       // Handle both Windows (\) and Mac (/) paths, and remove common extensions
-      const name = path.split(/[\\/]/).pop()?.replace(/\.(exe|app|lnk|bat)$/i, '') || 'Нова програма'
+      const name = path.split(/[\\/]/).pop()?.replace(/\.(exe|app|lnk|bat)$/i, '') || 'New App'
       await dbInsert('apps', { device_id: internalId, name, path })
       fetchDeviceAndApps()
     }
@@ -44,12 +44,12 @@ export default function AppsPage() {
     <div className="max-w-3xl mx-auto h-full flex flex-col relative z-10">
       <div className="flex justify-between items-center mb-10 bg-gray-900/40 p-8 rounded-3xl border border-gray-800/50 backdrop-blur-xl shadow-2xl">
         <div>
-          <h2 className="text-3xl font-black text-white bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">Програми</h2>
-          <p className="text-gray-400 mt-2 text-lg">Додайте застосунки для швидкого запуску через бота</p>
+          <h2 className="text-3xl font-black text-white bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">Apps</h2>
+          <p className="text-gray-400 mt-2 text-lg">Add applications for quick launch via the bot</p>
         </div>
         <button onClick={addApp} className="px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl transition-all font-bold shadow-lg shadow-blue-500/20 flex items-center gap-2">
           <FolderPlus size={20} />
-          Додати програму
+          Add App
         </button>
       </div>
       
@@ -75,7 +75,7 @@ export default function AppsPage() {
               <button 
                 onClick={() => removeApp(app.id)} 
                 className="shrink-0 p-3 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all font-medium opacity-0 group-hover:opacity-100 focus:opacity-100"
-                title="Видалити"
+                title="Delete"
               >
                 <Trash2 size={20} />
               </button>
@@ -87,8 +87,8 @@ export default function AppsPage() {
               className="text-center py-20 bg-gray-800/20 rounded-3xl border border-gray-700/50 border-dashed backdrop-blur-sm"
             >
               <Box size={48} className="mx-auto text-gray-600 mb-4" />
-              <p className="text-gray-400 text-xl font-medium">Список програм порожній.</p>
-              <p className="text-gray-500 mt-2">Натисніть "Додати програму", щоб розпочати.</p>
+              <p className="text-gray-400 text-xl font-medium">App list is empty.</p>
+              <p className="text-gray-500 mt-2">Click "Add App" to get started.</p>
             </motion.div>
           )}
         </div>
