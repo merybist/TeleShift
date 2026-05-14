@@ -113,6 +113,19 @@ ipcMain.on('quit-app', () => {
   app.exit(0)
 })
 
+ipcMain.handle('get-launch-at-startup', () => {
+  return app.getLoginItemSettings().openAtLogin
+})
+
+ipcMain.handle('set-launch-at-startup', (_event, openAtLogin: boolean) => {
+  app.setLoginItemSettings({
+    openAtLogin,
+    openAsHidden: true // Keep it stealthy on startup
+  })
+  console.log(`[TeleShift] Launch at startup set to: ${openAtLogin}`)
+  return true
+})
+
 // ══════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════
 // Auto-Update Logic (via electron-updater)
@@ -131,7 +144,7 @@ ipcMain.handle('check-for-update', async () => {
     }
     return null
   } catch (err) {
-    console.error('[Update Check Failed]', err)
+    console.error('[TeleShift][update-check]', err)
     return null
   }
 })
@@ -192,6 +205,7 @@ ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
           }
       })
       .subscribe((status: string, err: any) => {
+          if (err) console.error('[TeleShift][realtime-subscribe]', err)
           console.log('[Realtime] Subscription status:', status, err || '')
       })
   }
@@ -203,6 +217,21 @@ ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
 
   // Mark device as online
   setDeviceOnline(deviceId, true)
+
+  // Heartbeat mechanism: update last_seen every 30 seconds
+  setInterval(async () => {
+    try {
+      const data = { last_seen: new Date().toISOString() }
+      if (dbMode === 'supabase' && supabase) {
+        await supabase.from('devices').update(data).eq('id', deviceId)
+      } else if (dbMode === 'pg' && pgClient) {
+        await pgClient.query('UPDATE devices SET last_seen = $1 WHERE id = $2', [data.last_seen, deviceId])
+      }
+      console.log('[TeleShift][heartbeat] Status updated')
+    } catch (e) {
+      console.error('[TeleShift][heartbeat] Failed:', e)
+    }
+  }, 30000)
 })
 
 async function pollPendingCommands(deviceId: string) {
@@ -227,7 +256,7 @@ async function pollPendingCommands(deviceId: string) {
       await processCommand(cmd)
     }
   } catch (err) {
-    // Silently ignore poll errors
+    console.error('[TeleShift][polling]', err)
   }
 }
 
@@ -244,7 +273,7 @@ async function setDeviceOnline(deviceId: string, online: boolean) {
     }
     console.log(`[TeleShift] Device marked ${online ? 'ONLINE' : 'OFFLINE'}`)
   } catch (err) {
-    console.error('[TeleShift] Failed to update online status:', err)
+    console.error('[TeleShift][online-status]', err)
   }
 }
 
@@ -276,11 +305,11 @@ async function initPostgres(connectionString: string, deviceId: string) {
           }
         }
       } catch (err) {
-        console.error('[PG] Error processing notification:', err)
+        console.error('[TeleShift][pg-notification]', err)
       }
     })
   } catch (err) {
-    console.error('[PG] Connection error:', err)
+    console.error('[TeleShift][pg-connection]', err)
   }
 }
 
@@ -289,95 +318,115 @@ async function initPostgres(connectionString: string, deviceId: string) {
 // ══════════════════════════════════════════════════════════════
 
 ipcMain.handle('db-select', async (_event, { table, columns, filters, orderBy, ascending, limit }) => {
-  if (dbMode === 'pg' && pgClient) {
-    let query = `SELECT ${columns || '*'} FROM ${table}`
-    const params: any[] = []
-    let idx = 1
-    if (filters && Object.keys(filters).length) {
-      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
-      query += ' WHERE ' + conds.join(' AND ')
+  try {
+    if (dbMode === 'pg' && pgClient) {
+      let query = `SELECT ${columns || '*'} FROM ${table}`
+      const params: any[] = []
+      let idx = 1
+      if (filters && Object.keys(filters).length) {
+        const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+        query += ' WHERE ' + conds.join(' AND ')
+      }
+      if (orderBy) query += ` ORDER BY ${orderBy} ${ascending === false ? 'DESC' : 'ASC'}`
+      if (limit) query += ` LIMIT ${limit}`
+      const res = await pgClient.query(query, params)
+      return res.rows
+    } else if (supabase) {
+      let q = supabase.from(table).select(columns || '*')
+      for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+      if (orderBy) q = q.order(orderBy, { ascending: ascending !== false })
+      if (limit) q = q.limit(limit)
+      const { data } = await q
+      return data || []
     }
-    if (orderBy) query += ` ORDER BY ${orderBy} ${ascending === false ? 'DESC' : 'ASC'}`
-    if (limit) query += ` LIMIT ${limit}`
-    const res = await pgClient.query(query, params)
-    return res.rows
-  } else if (supabase) {
-    let q = supabase.from(table).select(columns || '*')
-    for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
-    if (orderBy) q = q.order(orderBy, { ascending: ascending !== false })
-    if (limit) q = q.limit(limit)
-    const { data } = await q
-    return data || []
+  } catch (e) {
+    console.error('[TeleShift][db-select]', e)
   }
   return []
 })
 
 ipcMain.handle('db-select-one', async (_event, { table, columns, filters }) => {
-  if (dbMode === 'pg' && pgClient) {
-    let query = `SELECT ${columns || '*'} FROM ${table}`
-    const params: any[] = []
-    let idx = 1
-    if (filters && Object.keys(filters).length) {
-      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
-      query += ' WHERE ' + conds.join(' AND ')
+  try {
+    if (dbMode === 'pg' && pgClient) {
+      let query = `SELECT ${columns || '*'} FROM ${table}`
+      const params: any[] = []
+      let idx = 1
+      if (filters && Object.keys(filters).length) {
+        const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+        query += ' WHERE ' + conds.join(' AND ')
+      }
+      query += ' LIMIT 1'
+      const res = await pgClient.query(query, params)
+      return res.rows[0] || null
+    } else if (supabase) {
+      let q = supabase.from(table).select(columns || '*')
+      for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+      const { data } = await q.single()
+      return data
     }
-    query += ' LIMIT 1'
-    const res = await pgClient.query(query, params)
-    return res.rows[0] || null
-  } else if (supabase) {
-    let q = supabase.from(table).select(columns || '*')
-    for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
-    const { data } = await q.single()
-    return data
+  } catch (e) {
+    console.error('[TeleShift][db-select-one]', e)
   }
   return null
 })
 
 ipcMain.handle('db-insert', async (_event, { table, data }) => {
-  if (dbMode === 'pg' && pgClient) {
-    const cols = Object.keys(data).join(', ')
-    const placeholders = Object.keys(data).map((_, i) => `$${i + 1}`).join(', ')
-    const res = await pgClient.query(`INSERT INTO ${table} (${cols}) VALUES (${placeholders}) RETURNING *`, Object.values(data))
-    return res.rows[0] || null
-  } else if (supabase) {
-    const { data: result } = await supabase.from(table).insert([data]).select().single()
-    return result
+  try {
+    if (dbMode === 'pg' && pgClient) {
+      const cols = Object.keys(data).join(', ')
+      const placeholders = Object.keys(data).map((_, i) => `$${i + 1}`).join(', ')
+      const res = await pgClient.query(`INSERT INTO ${table} (${cols}) VALUES (${placeholders}) RETURNING *`, Object.values(data))
+      return res.rows[0] || null
+    } else if (supabase) {
+      const { data: result } = await supabase.from(table).insert([data]).select().single()
+      return result
+    }
+  } catch (e) {
+    console.error('[TeleShift][db-insert]', e)
   }
   return null
 })
 
 ipcMain.handle('db-update', async (_event, { table, data, filters }) => {
-  if (dbMode === 'pg' && pgClient) {
-    const params: any[] = []
-    let idx = 1
-    const setParts = Object.entries(data).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
-    let query = `UPDATE ${table} SET ${setParts.join(', ')}`
-    if (filters && Object.keys(filters).length) {
-      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
-      query += ' WHERE ' + conds.join(' AND ')
+  try {
+    if (dbMode === 'pg' && pgClient) {
+      const params: any[] = []
+      let idx = 1
+      const setParts = Object.entries(data).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+      let query = `UPDATE ${table} SET ${setParts.join(', ')}`
+      if (filters && Object.keys(filters).length) {
+        const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+        query += ' WHERE ' + conds.join(' AND ')
+      }
+      await pgClient.query(query, params)
+    } else if (supabase) {
+      let q = supabase.from(table).update(data)
+      for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+      await q
     }
-    await pgClient.query(query, params)
-  } else if (supabase) {
-    let q = supabase.from(table).update(data)
-    for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
-    await q
+  } catch (e) {
+    console.error('[TeleShift][db-update]', e)
   }
 })
 
 ipcMain.handle('db-delete', async (_event, { table, filters }) => {
-  if (dbMode === 'pg' && pgClient) {
-    const params: any[] = []
-    let idx = 1
-    let query = `DELETE FROM ${table}`
-    if (filters && Object.keys(filters).length) {
-      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
-      query += ' WHERE ' + conds.join(' AND ')
+  try {
+    if (dbMode === 'pg' && pgClient) {
+      const params: any[] = []
+      let idx = 1
+      let query = `DELETE FROM ${table}`
+      if (filters && Object.keys(filters).length) {
+        const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+        query += ' WHERE ' + conds.join(' AND ')
+      }
+      await pgClient.query(query, params)
+    } else if (supabase) {
+      let q = supabase.from(table).delete()
+      for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+      await q
     }
-    await pgClient.query(query, params)
-  } else if (supabase) {
-    let q = supabase.from(table).delete()
-    for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
-    await q
+  } catch (e) {
+    console.error('[TeleShift][db-delete]', e)
   }
 })
 
@@ -388,50 +437,61 @@ ipcMain.handle('db-delete', async (_event, { table, filters }) => {
 const pgListeners = new Map<string, any>()
 
 ipcMain.handle('db-subscribe', async (_event, { channel, table, eventType, filter }) => {
-  const subId = `${channel}_${Date.now()}`
+  try {
+    const subId = `${channel}_${Date.now()}`
 
-  if (dbMode === 'pg' && pgClient) {
-    // PG mode — listener is already active from init, 
-    // we just need to forward matching notifications to renderer
-    const listener = (msg: any) => {
-      try {
-        const payload = JSON.parse(msg.payload)
-        mainWindow?.webContents.send('db-notification', { subId, payload })
-      } catch {}
+    if (dbMode === 'pg' && pgClient) {
+      // PG mode — listener is already active from init, 
+      // we just need to forward matching notifications to renderer
+      const listener = (msg: any) => {
+        try {
+          const payload = JSON.parse(msg.payload)
+          mainWindow?.webContents.send('db-notification', { subId, payload })
+        } catch (e) {
+          console.error('[TeleShift][pg-notification-parse]', e)
+        }
+      }
+      // Map the NOTIFY channel name from our trigger naming convention
+      let pgChannel = 'new_command'
+      if (table === 'connections') pgChannel = 'connection_change'
+      if (table === 'apps') pgChannel = 'apps_change'
+      if (table === 'logs') pgChannel = 'log_insert'
+
+      await pgClient.query(`LISTEN ${pgChannel}`)
+      pgClient.on('notification', listener)
+      pgListeners.set(subId, { listener, pgChannel })
+    } else if (supabase) {
+      const sub = supabase
+        .channel(channel)
+        .on('postgres_changes', { event: eventType || '*', schema: 'public', table, filter }, (payload: any) => {
+          mainWindow?.webContents.send('db-notification', { subId, payload: payload.new })
+        })
+        .subscribe()
+      pgListeners.set(subId, { sub })
     }
-    // Map the NOTIFY channel name from our trigger naming convention
-    let pgChannel = 'new_command'
-    if (table === 'connections') pgChannel = 'connection_change'
-    if (table === 'apps') pgChannel = 'apps_change'
-    if (table === 'logs') pgChannel = 'log_insert'
 
-    await pgClient.query(`LISTEN ${pgChannel}`)
-    pgClient.on('notification', listener)
-    pgListeners.set(subId, { listener, pgChannel })
-  } else if (supabase) {
-    const sub = supabase
-      .channel(channel)
-      .on('postgres_changes', { event: eventType || '*', schema: 'public', table, filter }, (payload: any) => {
-        mainWindow?.webContents.send('db-notification', { subId, payload: payload.new })
-      })
-      .subscribe()
-    pgListeners.set(subId, { sub })
+    return subId
+  } catch (e) {
+    console.error('[TeleShift][db-subscribe]', e)
+    return null
   }
-
-  return subId
 })
 
 ipcMain.handle('db-unsubscribe', async (_event, { subId }) => {
-  const entry = pgListeners.get(subId)
-  if (!entry) return
+  try {
+    const entry = pgListeners.get(subId)
+    if (!entry) return
 
-  if (dbMode === 'pg' && entry.listener) {
-    pgClient?.removeListener('notification', entry.listener)
-  } else if (entry.sub && supabase) {
-    supabase.removeChannel(entry.sub)
+    if (dbMode === 'pg' && entry.listener) {
+      pgClient?.removeListener('notification', entry.listener)
+    } else if (entry.sub && supabase) {
+      supabase.removeChannel(entry.sub)
+    }
+
+    pgListeners.delete(subId)
+  } catch (e) {
+    console.error('[TeleShift][db-unsubscribe]', e)
   }
-
-  pgListeners.delete(subId)
 })
 
 
@@ -440,20 +500,24 @@ ipcMain.handle('db-unsubscribe', async (_event, { subId }) => {
 // ══════════════════════════════════════════════════════════════
 
 async function dbUpdate(table: string, data: any, filters: any) {
-  if (dbMode === 'pg' && pgClient) {
-    const params: any[] = []
-    let idx = 1
-    const setParts = Object.entries(data).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
-    let query = `UPDATE ${table} SET ${setParts.join(', ')}`
-    if (filters) {
-      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
-      query += ' WHERE ' + conds.join(' AND ')
+  try {
+    if (dbMode === 'pg' && pgClient) {
+      const params: any[] = []
+      let idx = 1
+      const setParts = Object.entries(data).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+      let query = `UPDATE ${table} SET ${setParts.join(', ')}`
+      if (filters) {
+        const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+        query += ' WHERE ' + conds.join(' AND ')
+      }
+      await pgClient.query(query, params)
+    } else if (supabase) {
+      let q = supabase.from(table).update(data)
+      for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+      await q
     }
-    await pgClient.query(query, params)
-  } else if (supabase) {
-    let q = supabase.from(table).update(data)
-    for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
-    await q
+  } catch (e) {
+    console.error('[TeleShift][command-update-db]', e)
   }
 }
 
@@ -485,28 +549,33 @@ async function processCommand(cmd: any) {
                     const statusMap: any = {}
                     for (const app of apps) {
                         const appPath = app.path.toLowerCase()
-                        const appName = (appPath.split(/[\\/]/).pop() || '').toLowerCase()
+                        const fileName = (appPath.split(/[\\/]/).pop() || '').toLowerCase()
+                        const fileNameNoExt = fileName.replace(/\.[^/.]+$/, "")
                         
-                        // Check by full path or just by process name
                         const isRunning = runningPaths.some(p => p.includes(appPath)) || 
-                                          runningNames.some(n => n === appName || n === appName + '.exe')
+                                          runningNames.some(n => 
+                                            n === fileName || 
+                                            n === fileNameNoExt || 
+                                            n.includes(fileNameNoExt)
+                                          )
                         
                         statusMap[app.id] = isRunning
                     }
                     result = JSON.stringify(statusMap)
                 } catch (err) {
-                    result = 'Error checking processes'
+                    console.error('[TeleShift][check_apps]', err)
+                    result = 'Error checking processes: ' + (err as any).message
                 }
                 break
             case 'get_status':
                 try {
                     const [bat, disk, cpuLoad, mem, gpu, osInfo] = await Promise.all([
-                        si.battery().catch(() => ({ hasBattery: false })),
-                        si.fsSize().catch(() => []),
-                        si.currentLoad().catch(() => ({ currentLoad: 0 })),
-                        si.mem().catch(() => ({ total: 0, used: 0 })),
-                        si.graphics().catch(() => ({ controllers: [] })),
-                        si.osInfo().catch(() => ({ distro: 'Unknown', release: '', hostname: 'PC' }))
+                        si.battery().catch((e) => { console.error('[TeleShift][status-battery]', e); return { hasBattery: false } }),
+                        si.fsSize().catch((e) => { console.error('[TeleShift][status-disk]', e); return [] }),
+                        si.currentLoad().catch((e) => { console.error('[TeleShift][status-cpu]', e); return { currentLoad: 0 } }),
+                        si.mem().catch((e) => { console.error('[TeleShift][status-ram]', e); return { total: 0, used: 0 } }),
+                        si.graphics().catch((e) => { console.error('[TeleShift][status-gpu]', e); return { controllers: [] } }),
+                        si.osInfo().catch((e) => { console.error('[TeleShift][status-os]', e); return { distro: 'Unknown', release: '', hostname: 'PC' } })
                     ])
                     const cDisk = (disk as any[]).find(d => d.mount === 'C:') || disk[0]
                     const gpuInfo = (gpu as any).controllers?.[0]
@@ -531,6 +600,7 @@ async function processCommand(cmd: any) {
                     }
                     result = JSON.stringify(statusData)
                 } catch (e: any) {
+                    console.error('[TeleShift][get_status]', e)
                     result = JSON.stringify({ error: e.message })
                 }
                 break
@@ -538,6 +608,16 @@ async function processCommand(cmd: any) {
                 const vol = await loudness.getVolume()
                 const muted = await loudness.getMuted()
                 result = JSON.stringify({ volume: vol, muted })
+                break
+            case 'show_message':
+                const msg = cmd.payload?.text || 'Повідомлення від TeleShift'
+                dialog.showMessageBox(mainWindow!, {
+                    type: 'info',
+                    title: 'TeleShift Message',
+                    message: msg,
+                    buttons: ['OK']
+                })
+                result = 'success'
                 break
             case 'set_volume':
                 const action = cmd.payload.action
@@ -567,14 +647,12 @@ async function processCommand(cmd: any) {
                 const imgBuffer = source.thumbnail.toPNG()
                 
                 if (dbMode === 'supabase' && supabase) {
-                    // Upload to Supabase Storage and return public URL
                     const fileName = `screenshot_${Date.now()}.png`
                     const { data, error } = await supabase.storage.from('screenshots').upload(fileName, imgBuffer, { contentType: 'image/png' })
                     if (error) throw error
                     const { data: pubData } = supabase.storage.from('screenshots').getPublicUrl(fileName)
                     result = pubData.publicUrl
                 } else {
-                    // Raw PG mode — encode screenshot as base64
                     result = (imgBuffer as Buffer).toString('base64')
                 }
                 break
@@ -583,11 +661,12 @@ async function processCommand(cmd: any) {
                 else exec(`start "" "${cmd.payload.path}"`)
                 break
             default:
-                throw new Error('Unknown command')
+                throw new Error('Unknown command: ' + cmd.command)
         }
 
         await dbUpdate('device_commands', { status: 'completed', result }, { id: cmd.id })
     } catch (err: any) {
+        console.error('[TeleShift][command-handler]', err)
         await dbUpdate('device_commands', { status: 'error', result: err.message }, { id: cmd.id })
     }
 }

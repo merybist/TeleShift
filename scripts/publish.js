@@ -42,17 +42,10 @@ async function run() {
                 !f.includes('blockmap') &&
                 (f.includes(targetVersion) || f.includes(targetVersion.replace(/\./g, '-')))
             );
-
-            // Fallback
-            if (artifacts.length === 0) {
-                const versionParts = targetVersion.split('.');
-                const majorMinor = versionParts.slice(0, 2).join('.');
-                const match = distFiles.find(f => f.endsWith('.exe') && f.includes(majorMinor) && !f.includes('blockmap'));
-                if (match) artifacts.push(match);
-            }
             
             if (artifacts.length === 0) {
-                console.error('❌ Could not find .exe artifact in dist/. Did you build it?');
+                console.error(`❌ Could not find .exe artifact for version ${targetVersion} in dist/`);
+                console.log('Available files:', distFiles.filter(f => f.endsWith('.exe')));
                 process.exit(1);
             }
 

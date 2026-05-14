@@ -14,11 +14,32 @@ export default function ConnectionPage() {
   const [connection, setConnection] = useState<any>(null)
   const [timeLeft, setTimeLeft] = useState(120)
   const [error, setError] = useState<string | null>(null)
+  const [launchAtStartup, setLaunchAtStartup] = useState(false)
   const botName = 'merycontrolbot'
 
   useEffect(() => {
     initDevice()
+    checkLaunchSettings()
   }, [])
+
+  async function checkLaunchSettings() {
+    try {
+      const state = await ipcRenderer.invoke('get-launch-at-startup')
+      setLaunchAtStartup(state)
+    } catch (err) {
+      console.error('[TeleShift][startup-check]', err)
+    }
+  }
+
+  async function toggleLaunchAtStartup() {
+    try {
+      const newState = !launchAtStartup
+      await ipcRenderer.invoke('set-launch-at-startup', newState)
+      setLaunchAtStartup(newState)
+    } catch (err) {
+      console.error('[TeleShift][startup-toggle]', err)
+    }
+  }
 
   useEffect(() => {
     if (!internalId) return
@@ -231,6 +252,27 @@ export default function ConnectionPage() {
         </motion.div>
       )}
       </AnimatePresence>
+      
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.5 }}
+        className="mt-8 pt-6 border-t border-gray-800/50 flex items-center justify-between px-2"
+      >
+        <div className="flex flex-col">
+          <span className="text-sm font-bold text-gray-200">Автозапуск</span>
+          <span className="text-xs text-gray-500">Запускати програму при старті системи</span>
+        </div>
+        
+        <button 
+          onClick={toggleLaunchAtStartup}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${launchAtStartup ? 'bg-blue-600' : 'bg-gray-700'}`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${launchAtStartup ? 'translate-x-6' : 'translate-x-1'}`}
+          />
+        </button>
+      </motion.div>
     </div>
   )
 }

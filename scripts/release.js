@@ -40,12 +40,20 @@ async function run() {
         process.exit(0);
     }
 
-    // Update package.json
-    pkg.version = newVersion;
+    // Update package.json (with hyphen for the EXE filename)
+    const versionForPkg = newVersion.replace(/\.(\d+)$/, '-$1');
+    const versionForTag = newVersion; // Dots only for GitHub
+    
+    pkg.version = versionForPkg;
     fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2));
-    console.log('✅ package.json updated.');
+    console.log(`✅ package.json updated to ${versionForPkg} (for filename).`);
 
     // 2. Build
+    console.log('🧹 Cleaning dist folder...');
+    if (fs.existsSync(path.join(__dirname, '../dist'))) {
+        fs.rmSync(path.join(__dirname, '../dist'), { recursive: true, force: true });
+    }
+
     console.log('🔨 Building for Windows...');
     try {
         execSync('npm run build:win', { stdio: 'inherit' });
@@ -61,65 +69,55 @@ async function run() {
         console.log('📤 Publishing to GitHub...');
         
         const releaseNotes = `
-## TeleShift Stable Release v${newVersion}
+## TeleShift Stable Release v${versionForTag}
 
-### 🔄 What's New:
-*   **Real-time App Status:** Now with ✅ indicators for running apps in the launcher.
-*   **Settings Fix:** All buttons in the Telegram bot are now fully functional.
-*   **macOS Stability:** Native shutdown/reboot/lock commands for Mac users.
-*   **Performance:** Improved uptime precision and telemetry reporting.
-
-### 🛠 Technical:
-*   Updated system-information engine.
-*   Enhanced IPC communication security.
-*   New HTML-based message parsing in Telegram bot.
+### 🔄 Що нового:
+*   **💓 Heartbeat System:** Тепер статус "Онлайн" відображається максимально точно в реальному часі.
+*   **🚀 Автозапуск:** Додана кнопка в налаштуваннях для запуску програми при старті Windows/macOS.
+*   **✅ Індикатори процесів:** Покращено алгоритм виявлення запущених ігор (наприклад, Majestic Launcher).
+*   **💬 Повідомлення на екран:** Можливість надсилати текст прямо на монітор ПК через бота.
         `.trim();
 
         fs.writeFileSync('release_notes.md', releaseNotes);
 
         try {
-            // Adjust path if there is a space in the name (electron-builder default)
             const distFiles = fs.readdirSync(path.join(__dirname, '../dist'));
-            const versionSafe = newVersion.replace(/\./g, '\\.');
             const artifacts = distFiles.filter(f => 
                 f.endsWith('.exe') && 
                 !f.includes('blockmap') &&
-                (f.includes(newVersion) || f.includes(newVersion.replace(/\./g, '-')))
+                (f.includes(versionForPkg) || f.includes(versionForTag))
             );
             
-            // Fallback: search for just the version numbers
             if (artifacts.length === 0) {
-                const versionParts = newVersion.split('.');
-                const majorMinor = versionParts.slice(0, 2).join('.');
-                const match = distFiles.find(f => f.endsWith('.exe') && f.includes(majorMinor) && !f.includes('blockmap'));
-                if (match) artifacts.push(match);
-            }
-            
-            if (artifacts.length === 0) {
-                console.error('❌ Could not find .exe artifact in dist/');
-                console.log('Available files:', distFiles.filter(f => f.endsWith('.exe')));
+                console.error(`❌ Не знайдено .exe артефактів у dist/`);
                 process.exit(1);
             }
 
             const exeFile = `dist/"${artifacts[0]}"`;
             
-            console.log(`Pushing tag v${newVersion} and uploading ${exeFile}...`);
+            console.log(`Pushing tag ${versionForTag} and uploading ${exeFile}...`);
             
-            // Get current branch name
             const branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
             
-            console.log('Pushing code changes (non-fatal)...');
+            console.log('Syncing with remote (pull --rebase)...');
             try {
-                execSync(`git add . && git commit -m "chore: release ${newVersion}"`, { stdio: 'ignore' });
+                execSync(`git pull origin ${branch} --rebase`, { stdio: 'inherit' });
+            } catch(e) {
+                console.warn('⚠️ Pull failed, check for conflicts.');
+            }
+
+            console.log('Pushing code changes...');
+            try {
+                execSync(`git add . && git commit -m "chore: release ${versionForTag}"`, { stdio: 'ignore' });
             } catch(e) {}
 
             try {
                 execSync(`git push origin ${branch}`, { stdio: 'inherit' });
             } catch (e) {
-                console.warn('⚠️ Git push failed, but continuing to GitHub Release...');
+                console.error('❌ Git push failed. Please push manually.');
             }
 
-            execSync(`gh release create ${newVersion} ${exeFile} --title "v${newVersion}" --notes-file release_notes.md`, { stdio: 'inherit' });
+            execSync(`gh release create ${versionForTag} ${exeFile} --title "v${versionForTag}" --notes-file release_notes.md`, { stdio: 'inherit' });
             
             console.log('\n✨ SUCCESS! Update is live and users will be notified.');
         } catch (e) {
