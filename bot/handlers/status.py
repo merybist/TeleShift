@@ -24,24 +24,13 @@ async def stat_all(call: CallbackQuery, device_id: str):
             hostname = d.get('hostname', 'PC').replace('<', '&lt;').replace('>', '&gt;')
             os_info = d.get('os', 'N/A').replace('<', '&lt;').replace('>', '&gt;')
             
-            # Розумний Аптайм
-            uptime_s = d.get('uptime_seconds', d.get('uptime_hours', 0) * 3600)
-            if uptime_s < 3600:
-                uptime_str = f"{uptime_s // 60}хв"
-            elif uptime_s < 86400:
-                uptime_str = f"{uptime_s // 3600}г {(uptime_s % 3600) // 60}хв"
-            else:
-                days = uptime_s // 86400
-                hours = (uptime_s % 86400) // 3600
-                uptime_str = f"{days}д {hours}г"
-
             lines = [
+                f"📊 <b>Статус ПК</b>\n",
                 f"🖥 <b>{hostname}</b>",
-                f"<code>{os_info}</code>",
-                f"────────────────────",
+                f"💻 {os_info}\n",
                 f"⚡ ЦП: <b>{d.get('cpu_load', 0)}%</b>",
-                f"🧠 RAM: <b>{d.get('ram_used', 0)}</b> / {d.get('ram_total', 0)} GB (<b>{d.get('ram_percent', 0)}%</b>)",
-                f"💾 Диск C: <b>{d.get('disk_free', 0)} GB</b> вільно",
+                f"🧠 RAM: <b>{d.get('ram_used', 0)}</b> / {d.get('ram_total', 0)} GB ({d.get('ram_percent', 0)}%)",
+                f"💾 Диск: <b>{d.get('disk_used', 0)}</b> / {d.get('disk_total', 0)} GB (вільно {d.get('disk_free', 0)} GB)",
             ]
 
             # GPU
@@ -58,8 +47,8 @@ async def stat_all(call: CallbackQuery, device_id: str):
             # Battery
             battery = d.get('battery')
             if battery is not None and isinstance(battery, (int, float)):
-                charge_icon = "🔌" if d.get('battery_charging') else "🔋"
-                lines.append(f"{charge_icon} Батарея: <b>{battery}%</b>")
+                charge_icon = "⚡" if d.get('battery_charging') else ""
+                lines.append(f"\n🔋 Батарея: <b>{battery}%</b> {charge_icon}")
 
             lines.append(f"────────────────────")
             lines.append(f"⏱ Uptime: <b>{uptime_str}</b>")
@@ -67,7 +56,7 @@ async def stat_all(call: CallbackQuery, device_id: str):
             text = "\n".join(lines)
             await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="HTML")
         except Exception as e:
-            await call.message.edit_text(f"❌ Помилка обробки: {str(e)[:100]}", reply_markup=back_kb())
+            await call.message.edit_text(f"❌ Помилка обробки статусних даних: {str(e)[:100]}", reply_markup=back_kb())
 
 @router.callback_query(F.data == "stat_sound")
 async def stat_sound(call: CallbackQuery, device_id: str):
