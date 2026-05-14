@@ -105,7 +105,10 @@ async function run() {
             
             console.log(`Pushing tag v${newVersion} and uploading ${exeFile}...`);
             
-            execSync(`git add . && git commit -m "chore: release v${newVersion}" && git push`, { stdio: 'inherit' });
+            // Get current branch name
+            const branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
+            
+            execSync(`git add . && git commit -m "chore: release v${newVersion}" && git push origin ${branch}`, { stdio: 'inherit' });
             execSync(`gh release create v${newVersion} ${exeFile} --title "TeleShift Release v${newVersion}" --notes-file release_notes.md`, { stdio: 'inherit' });
             
             console.log('\n✨ SUCCESS! Update is live and users will be notified.');
