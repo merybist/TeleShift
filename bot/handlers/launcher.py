@@ -1,3 +1,4 @@
+import json
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from db import db
@@ -12,7 +13,22 @@ async def menu_launch(call: CallbackQuery, device_id: str):
     if not rows:
         await call.message.edit_text("Немає програм. Додайте їх через додаток на ПК.", reply_markup=back_kb())
         return
-    await call.message.edit_text("Оберіть програму для запуску:", reply_markup=apps_kb(rows))
+    
+    await call.message.edit_text("⏳ Перевіряю статус програм...")
+    
+    # Запитуємо статус у ПК
+    payload = {"apps": [{"id": r["id"], "path": r["path"]} for r in rows]}
+    cmd_id = await push_command(device_id, "check_apps", payload)
+    result = await wait_for_result(cmd_id, timeout=10)
+    
+    status_map = {}
+    if result and result != "timeout" and not result.startswith("Error"):
+        try:
+            status_map = json.loads(result)
+        except:
+            pass
+            
+    await call.message.edit_text("🚀 Запуск програм:", reply_markup=apps_kb(rows, status_map))
 
 @router.callback_query(F.data.startswith("launch_"))
 async def do_launch(call: CallbackQuery, device_id: str):
