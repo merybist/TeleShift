@@ -39,23 +39,19 @@ async def stat_all(call: CallbackQuery, device_id: str):
                 gpu_name = gpu_name.replace('<', '&lt;').replace('>', '&gt;')
                 gpu_line = f"🎮 GPU: <b>{gpu_name}</b>"
                 if d.get('gpu_usage') is not None:
-                    gpu_line += f" ({d['gpu_usage']}%)"
+                    gpu_line += f" (<b>{d['gpu_usage']}%</b>)"
                 if d.get('gpu_temp') is not None:
-                    gpu_line += f" 🌡{d['gpu_temp']}°C"
+                    gpu_line += f" 🌡<b>{d['gpu_temp']}°C</b>"
                 lines.append(gpu_line)
 
-            # Battery (only if laptop and battery info is valid)
+            # Battery
             battery = d.get('battery')
             if battery is not None and isinstance(battery, (int, float)):
                 charge_icon = "⚡" if d.get('battery_charging') else ""
                 lines.append(f"\n🔋 Батарея: <b>{battery}%</b> {charge_icon}")
 
-            # Uptime
-            uptime = d.get('uptime_hours', 0)
-            if uptime >= 24:
-                lines.append(f"\n⏱ Аптайм: {uptime // 24}д {uptime % 24}г")
-            else:
-                lines.append(f"\n⏱ Аптайм: {uptime}г")
+            lines.append(f"────────────────────")
+            lines.append(f"⏱ Uptime: <b>{uptime_str}</b>")
 
             text = "\n".join(lines)
             await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="HTML")

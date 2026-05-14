@@ -63,11 +63,14 @@ def monitors_kb(count):
     kb.append([back_btn()])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
-def apps_kb(apps):
+def apps_kb(apps, status_map=None):
     kb = []
     row = []
     for app in apps:
-        row.append(InlineKeyboardButton(text=app['name'], callback_data=f"launch_{app['id']}"))
+        is_running = status_map.get(str(app['id'])) if status_map else False
+        name = f"✅ {app['name']}" if is_running else app['name']
+        
+        row.append(InlineKeyboardButton(text=name, callback_data=f"launch_{app['id']}"))
         if len(row) == 2:
             kb.append(row)
             row = []
