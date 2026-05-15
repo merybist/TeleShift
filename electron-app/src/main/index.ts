@@ -193,7 +193,12 @@ ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
     dbMode = 'supabase'
     supabase = createClient(url, key, {
       auth: { persistSession: false },
-      realtime: { transport: WebSocket as any }
+      realtime: { transport: WebSocket as any },
+      global: {
+        headers: {
+          'x-device-id': deviceId
+        }
+      }
     })
     
     // Realtime subscription (primary)
@@ -532,6 +537,22 @@ async function dbUpdate(table: string, data: any, filters: any) {
 
 async function processCommand(cmd: any) {
     try {
+        // Verify authorized user
+        if (cmd.payload?._authorized_user) {
+            let conn: any = null
+            if (dbMode === 'supabase' && supabase) {
+                const { data } = await supabase.from('connections').select('user_id').eq('device_id', cmd.device_id).eq('is_active', true).single()
+                conn = data
+            } else if (dbMode === 'pg' && pgClient) {
+                const res = await pgClient.query('SELECT user_id FROM connections WHERE device_id = $1 AND is_active = true LIMIT 1', [cmd.device_id])
+                conn = res.rows[0]
+            }
+            if (!conn || Number(conn.user_id) !== Number(cmd.payload._authorized_user)) {
+                console.warn('[TeleShift] Unauthorized command attempt from user_id:', cmd.payload._authorized_user)
+                await dbUpdate('device_commands', { status: 'error', result: 'Unauthorized' }, { id: cmd.id })
+                return
+            }
+        }
         await dbUpdate('device_commands', { status: 'processing' }, { id: cmd.id })
         let result: any = 'success'
 
@@ -655,8 +676,13 @@ async function processCommand(cmd: any) {
                             const fileName = `screenshot_${Date.now()}_${Math.random().toString(36).substring(7)}.png`
                             const { data, error } = await supabase.storage.from('screenshots').upload(fileName, imgBuffer, { contentType: 'image/png' })
                             if (error) throw error
-                            const { data: pubData } = supabase.storage.from('screenshots').getPublicUrl(fileName)
-                            return pubData.publicUrl
+                            
+                            // Generate Signed URL (valid for 5 minutes)
+                            const { data: signedData, error: signErr } = await supabase.storage
+                                .from('screenshots')
+                                .createSignedUrl(fileName, 300)
+                            if (signErr) throw signErr
+                            return signedData.signedUrl
                         } else {
                             return 'data:image/png;base64,' + (imgBuffer as Buffer).toString('base64')
                         }
