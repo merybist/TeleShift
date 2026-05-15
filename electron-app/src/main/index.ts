@@ -77,6 +77,10 @@ app.whenReady().then(() => {
     openAsHidden: true
   })
 
+  // Update monitor count on change
+  screen.on('display-added', () => { if (currentDeviceId) setDeviceOnline(currentDeviceId, true) })
+  screen.on('display-removed', () => { if (currentDeviceId) setDeviceOnline(currentDeviceId, true) })
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
     else mainWindow?.show()
@@ -221,11 +225,12 @@ ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
   // Heartbeat mechanism: update last_seen every 30 seconds
   setInterval(async () => {
     try {
-      const data = { last_seen: new Date().toISOString() }
+      const monitorCount = screen.getAllDisplays().length
+      const data = { last_seen: new Date().toISOString(), monitor_count: monitorCount }
       if (dbMode === 'supabase' && supabase) {
         await supabase.from('devices').update(data).eq('id', deviceId)
       } else if (dbMode === 'pg' && pgClient) {
-        await pgClient.query('UPDATE devices SET last_seen = $1 WHERE id = $2', [data.last_seen, deviceId])
+        await pgClient.query('UPDATE devices SET last_seen = $1, monitor_count = $2 WHERE id = $3', [data.last_seen, monitorCount, deviceId])
       }
       console.log('[TeleShift][heartbeat] Status updated')
     } catch (e) {
@@ -262,16 +267,17 @@ async function pollPendingCommands(deviceId: string) {
 
 async function setDeviceOnline(deviceId: string, online: boolean) {
   try {
-    const data = { is_online: online, last_seen_at: new Date().toISOString() }
+    const monitorCount = screen.getAllDisplays().length
+    const data = { is_online: online, last_seen_at: new Date().toISOString(), monitor_count: monitorCount }
     if (dbMode === 'supabase' && supabase) {
       await supabase.from('devices').update(data).eq('id', deviceId)
     } else if (dbMode === 'pg' && pgClient) {
       await pgClient.query(
-        'UPDATE devices SET is_online = $1, last_seen_at = $2 WHERE id = $3',
-        [online, data.last_seen_at, deviceId]
+        'UPDATE devices SET is_online = $1, last_seen_at = $2, monitor_count = $3 WHERE id = $4',
+        [online, data.last_seen_at, monitorCount, deviceId]
       )
     }
-    console.log(`[TeleShift] Device marked ${online ? 'ONLINE' : 'OFFLINE'}`)
+    console.log(`[TeleShift] Device marked ${online ? 'ONLINE' : 'OFFLINE'} (${monitorCount} monitors)`)
   } catch (err) {
     console.error('[TeleShift][online-status]', err)
   }
@@ -633,27 +639,42 @@ async function processCommand(cmd: any) {
                 result = JSON.stringify({ volume: newVol, muted: newMute })
                 break
             case 'take_screenshot':
-                const primaryDisplay = screen.getPrimaryDisplay()
-                const { width, height } = primaryDisplay.size
-                
-                const sources = await desktopCapturer.getSources({
-                    types: ['screen'],
-                    thumbnailSize: { width, height }
-                })
-                
-                const source = sources[0] // Primary screen
-                if (!source) throw new Error('No screen source found')
-                
-                const imgBuffer = source.thumbnail.toPNG()
-                
-                if (dbMode === 'supabase' && supabase) {
-                    const fileName = `screenshot_${Date.now()}.png`
-                    const { data, error } = await supabase.storage.from('screenshots').upload(fileName, imgBuffer, { contentType: 'image/png' })
-                    if (error) throw error
-                    const { data: pubData } = supabase.storage.from('screenshots').getPublicUrl(fileName)
-                    result = pubData.publicUrl
-                } else {
-                    result = (imgBuffer as Buffer).toString('base64')
+                try {
+                    const monitorPref = cmd.payload?.monitor || 'all'
+                    const sources = await desktopCapturer.getSources({
+                        types: ['screen'],
+                        thumbnailSize: { width: 1920, height: 1080 } // High res thumb
+                    })
+
+                    const captureSource = async (source: any) => {
+                        const imgBuffer = source.thumbnail.toPNG()
+                        if (dbMode === 'supabase' && supabase) {
+                            const fileName = `screenshot_${Date.now()}_${Math.random().toString(36).substring(7)}.png`
+                            const { data, error } = await supabase.storage.from('screenshots').upload(fileName, imgBuffer, { contentType: 'image/png' })
+                            if (error) throw error
+                            const { data: pubData } = supabase.storage.from('screenshots').getPublicUrl(fileName)
+                            return pubData.publicUrl
+                        } else {
+                            return 'data:image/png;base64,' + (imgBuffer as Buffer).toString('base64')
+                        }
+                    }
+
+                    if (monitorPref === 'all' && sources.length > 1) {
+                        const results = await Promise.all(sources.map(s => captureSource(s)))
+                        result = JSON.stringify(results)
+                    } else {
+                        // Capture specific monitor or default to first
+                        let targetSource = sources[0]
+                        if (monitorPref !== 'all') {
+                            const idx = parseInt(monitorPref) - 1
+                            if (sources[idx]) targetSource = sources[idx]
+                        }
+                        if (!targetSource) throw new Error('Target monitor source not found')
+                        result = await captureSource(targetSource)
+                    }
+                } catch (err: any) {
+                    console.error('[TeleShift][screenshot]', err)
+                    result = 'Error: ' + err.message
                 }
                 break
             case 'launch_app':
