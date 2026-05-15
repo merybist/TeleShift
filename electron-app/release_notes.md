@@ -1,7 +1,7 @@
 ## TeleShift Stable Release v2026.5.15.2
 
 ### 🔄 What's New:
-*   **💓 Heartbeat System:** Real-time online status tracking with precise accuracy.
-*   **🚀 Auto-Start:** Added a toggle in settings to launch the app on system startup.
-*   **✅ Process Indicators:** Improved detection of running apps (e.g., Majestic Launcher).
-*   **💬 Screen Messages:** Send text messages directly to the PC screen via the bot.
+*   **Real-time App Status:** Now with ✅ indicators for running apps in the launcher.
+*   **Settings Fix:** All buttons in the Telegram bot are now fully functional.
+*   **macOS Stability:** Native shutdown/reboot/lock commands for Mac users.
+*   **Performance:** Improved uptime precision and telemetry reporting.

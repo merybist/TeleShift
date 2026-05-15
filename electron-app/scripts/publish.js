@@ -38,19 +38,19 @@ async function run() {
         try {
             const distFiles = fs.readdirSync(path.join(__dirname, '../dist'));
             const artifacts = distFiles.filter(f => 
-                f.endsWith('.exe') && 
+                (f.endsWith('.exe') || f.endsWith('latest.yml')) && 
                 !f.includes('blockmap') &&
-                (f.includes(targetVersion) || f.includes(targetVersion.replace(/\./g, '-')))
+                (f.includes(version) || f.includes(targetVersion) || f === 'latest.yml')
             );
             
             if (artifacts.length === 0) {
-                console.error(`❌ Could not find .exe artifact for version ${targetVersion} in dist/`);
+                console.error(`❌ Could not find artifacts for version ${targetVersion} in dist/`);
                 console.log('Available files:', distFiles.filter(f => f.endsWith('.exe')));
                 process.exit(1);
             }
 
-            const exeFile = `dist/"${artifacts[0]}"`;
-            console.log(`Uploading ${exeFile}...`);
+            const filesToUpload = artifacts.map(f => `dist/"${f}"`).join(' ');
+            console.log(`Uploading artifacts: ${artifacts.join(', ')}...`);
             
             // Get current branch name
             const branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
@@ -66,7 +66,24 @@ async function run() {
                 console.warn('⚠️ Git push failed, but continuing to GitHub Release...');
             }
 
-            execSync(`gh release create ${targetVersion} ${exeFile} --title "v${targetVersion}" --notes-file release_notes.md`, { stdio: 'inherit' });
+            console.log('Checking for existing release...');
+            try {
+                const existing = execSync(`gh release view ${targetVersion}`).toString();
+                if (existing) {
+                    const del = await new Promise(resolve => rl.question(`⚠️ Release ${targetVersion} already exists. Overwrite? (y/n): `, resolve));
+                    if (del.toLowerCase() === 'y') {
+                        console.log('Deleting old release and tag...');
+                        execSync(`gh release delete ${targetVersion} --yes`, { stdio: 'inherit' });
+                        execSync(`git tag -d ${targetVersion}`, { stdio: 'ignore' });
+                        execSync(`git push origin :refs/tags/${targetVersion}`, { stdio: 'ignore' });
+                    } else {
+                        console.log('Aborted to prevent conflict.');
+                        process.exit(0);
+                    }
+                }
+            } catch (e) {}
+
+            execSync(`gh release create ${targetVersion} ${filesToUpload} --title "v${targetVersion}" --notes-file release_notes.md`, { stdio: 'inherit' });
             
             console.log('\n✨ SUCCESS! Version pushed to GitHub.');
         } catch (e) {
