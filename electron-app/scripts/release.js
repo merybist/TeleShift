@@ -11,24 +11,32 @@ const rl = readline.createInterface({
 async function run() {
     console.log('🚀 TeleShift Deployment Manager starting...');
 
-    // 1. Calculate new version (YYYY.MM.DD.Attempt)
-    const packagePath = path.join(__dirname, '../package.json');
-    const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-    const oldVersion = pkg.version;
-    
+    // 1. Calculate new version based on today's date and existing tags
     const now = new Date();
     const todayStr = `${now.getFullYear()}.${now.getMonth() + 1}.${now.getDate()}`;
     
-    let newVersion;
-    if (oldVersion.startsWith(todayStr)) {
-        // Same day, increment attempt (handle both . and - for transition)
-        const parts = oldVersion.split(/[.-]/);
-        const attempt = parseInt(parts[parts.length - 1] || '0') + 1;
-        newVersion = `${todayStr}.${attempt}`;
-    } else {
-        // New day, start from .1
-        newVersion = `${todayStr}.1`;
+    let latestAttempt = 0;
+    try {
+        const tags = execSync('git tag -l').toString().split('\n');
+        tags.forEach(tag => {
+            if (tag.startsWith(todayStr)) {
+                const parts = tag.split('.');
+                const attempt = parseInt(parts[parts.length - 1]);
+                if (!isNaN(attempt) && attempt > latestAttempt) {
+                    latestAttempt = attempt;
+                }
+            }
+        });
+    } catch (e) {
+        console.warn('⚠️ Could not fetch tags, starting from 0');
     }
+
+    const nextAttempt = latestAttempt + 1;
+    const newVersion = `${todayStr}.${nextAttempt}`;
+
+    const packagePath = path.join(__dirname, '../package.json');
+    const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+    const oldVersion = pkg.version;
 
     console.log(`Current version: ${oldVersion}`);
     console.log(`Target version:  ${newVersion}`);
@@ -92,27 +100,30 @@ async function run() {
         try {
             const distFiles = fs.readdirSync(path.join(__dirname, '../dist'));
             const artifacts = distFiles.filter(f => 
-                f.endsWith('.exe') && 
+                (f.endsWith('.exe') || f.endsWith('latest.yml')) && 
                 !f.includes('blockmap') &&
-                (f.includes(versionForPkg) || f.includes(versionForTag))
+                (f.includes(versionForPkg) || f.includes(versionForTag) || f === 'latest.yml')
             );
             
             if (artifacts.length === 0) {
-                console.error(`❌ No .exe artifacts found in dist/`);
+                console.error(`❌ No artifacts found in dist/`);
                 process.exit(1);
             }
 
-            const exeFile = `dist/"${artifacts[0]}"`;
+            const filesToUpload = artifacts.map(f => `dist/"${f}"`).join(' ');
             
-            console.log(`Pushing tag ${versionForTag} and uploading ${exeFile}...`);
+            console.log(`Pushing tag ${versionForTag} and uploading artifacts: ${artifacts.join(', ')}...`);
             
             const branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
             
             console.log('Syncing with remote (pull --rebase)...');
             try {
+                // Stash local changes to allow rebase
+                execSync('git stash', { stdio: 'ignore' });
                 execSync(`git pull origin ${branch} --rebase`, { stdio: 'inherit' });
+                execSync('git stash pop', { stdio: 'ignore' });
             } catch(e) {
-                console.warn('⚠️ Pull failed, check for conflicts.');
+                console.warn('⚠️ Pull/Stash failed, check for conflicts.');
             }
 
             console.log('Pushing code changes...');
@@ -126,7 +137,7 @@ async function run() {
                 console.error('❌ Git push failed. Please push manually.');
             }
 
-            execSync(`gh release create ${versionForTag} ${exeFile} --title "v${versionForTag}" --notes-file release_notes.md`, { stdio: 'inherit' });
+            execSync(`gh release create ${versionForTag} ${filesToUpload} --title "v${versionForTag}" --notes-file release_notes.md`, { stdio: 'inherit' });
             
             console.log('\n✨ SUCCESS! Update is live and users will be notified.');
         } catch (e) {

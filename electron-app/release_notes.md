@@ -1,4 +1,4 @@
-## TeleShift Stable Release v2026.5.15.4
+## TeleShift Stable Release v2026.5.15.2
 
 ### 🔄 What's New:
 *   **💓 Heartbeat System:** Real-time online status tracking with precise accuracy.

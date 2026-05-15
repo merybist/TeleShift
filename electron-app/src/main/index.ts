@@ -85,6 +85,9 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
     else mainWindow?.show()
   })
+
+  // Check for updates on startup
+  autoUpdater.checkForUpdatesAndNotify()
 })
 
 app.on('window-all-closed', () => {

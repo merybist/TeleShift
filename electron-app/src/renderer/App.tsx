@@ -182,6 +182,9 @@ function UpdateModal() {
     ipcRenderer.on('update-progress', progressListener)
     ipcRenderer.on('update-ready', readyListener)
 
+    // Initial check
+    checkForUpdate()
+
     return () => {
       ipcRenderer.removeListener('update-progress', progressListener)
       ipcRenderer.removeListener('update-ready', readyListener)
