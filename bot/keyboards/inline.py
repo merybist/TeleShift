@@ -13,12 +13,12 @@ def connect_info_kb(lang='ua'):
 
 def main_menu_kb(lang='ua'):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=t('power_title', lang), callback_data="menu_power")],
-        [InlineKeyboardButton(text=t('status_fetching', lang).split(' ')[0] + " Status", callback_data="menu_status"),
-         InlineKeyboardButton(text="🔒 Lock", callback_data="sys_lock")],
-        [InlineKeyboardButton(text="📸 Screenshot", callback_data="menu_screenshot"),
-         InlineKeyboardButton(text="🚀 Launch", callback_data="menu_launch")],
-        [InlineKeyboardButton(text=t('settings', lang), callback_data="menu_settings")]
+        [InlineKeyboardButton(text=f"🔋 {t('power_title', lang)}", callback_data="menu_power")],
+        [InlineKeyboardButton(text=f"📊 {t('status_title', lang)}", callback_data="menu_status"),
+         InlineKeyboardButton(text=f"🔒 {t('lock', lang)}", callback_data="sys_lock")],
+        [InlineKeyboardButton(text=f"📸 {t('screenshot', lang)}", callback_data="menu_screenshot"),
+         InlineKeyboardButton(text=f"🚀 {t('launch', lang)}", callback_data="menu_launch")],
+        [InlineKeyboardButton(text=f"⚙️ {t('settings', lang)}", callback_data="menu_settings")]
     ])
 
 def power_control_kb(lang='ua'):
@@ -64,13 +64,13 @@ def back_kb(lang='ua'):
 
 def status_menu_kb(lang='ua'):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💾 Get Status", callback_data="stat_all")],
-        [InlineKeyboardButton(text="🔇 Sound Control", callback_data="stat_sound")],
+        [InlineKeyboardButton(text=f"💾 {t('get_status', lang)}", callback_data="stat_all")],
+        [InlineKeyboardButton(text=f"🔇 {t('sound_control', lang)}", callback_data="stat_sound")],
         [back_btn(lang)]
     ])
 
 def sound_menu_kb(vol_percent, is_muted, lang='ua'):
-    mute_text = "🔊 Unmute" if is_muted else "🔇 Mute"
+    mute_text = f"🔊 {t('unmute', lang)}" if is_muted else f"🔇 {t('mute', lang)}"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=mute_text, callback_data="snd_mute")],
         [InlineKeyboardButton(text="➕ +10%", callback_data="snd_up"),
@@ -79,16 +79,16 @@ def sound_menu_kb(vol_percent, is_muted, lang='ua'):
     ])
 
 def settings_kb(settings, lang='ua'):
-    notif = "On" if settings.get('notify_on_command') else "Off"
-    online_notif = "On" if settings.get('notify_online', True) else "Off"
+    notif = t('on', lang) if settings.get('notify_on_command') else t('off', lang)
+    online_notif = t('on', lang) if settings.get('notify_online', True) else t('off', lang)
     qual = settings.get('screenshot_quality', 'high')
     current_lang = settings.get('language', 'en').upper()
     kb = [
-        [InlineKeyboardButton(text=f"🔔 Notifications: {notif}", callback_data="set_notif")],
-        [InlineKeyboardButton(text=f"🟢 Online Alert: {online_notif}", callback_data="set_online_notif")],
-        [InlineKeyboardButton(text=f"📸 Quality: {qual}", callback_data="set_qual"),
-         InlineKeyboardButton(text=f"🌐 Language: {current_lang}", callback_data="set_lang")],
-        [InlineKeyboardButton(text="🔌 Disconnect PC", callback_data="disconnect_pc")],
+        [InlineKeyboardButton(text=f"🔔 {t('notifications', lang)}: {notif}", callback_data="set_notif")],
+        [InlineKeyboardButton(text=f"🟢 {t('online_alert', lang)}: {online_notif}", callback_data="set_online_notif")],
+        [InlineKeyboardButton(text=f"📸 {t('quality', lang)}: {qual}", callback_data="set_qual"),
+         InlineKeyboardButton(text=f"🌐 {t('language', lang)}: {current_lang}", callback_data="set_lang")],
+        [InlineKeyboardButton(text=f"🔌 {t('disconnect', lang)}", callback_data="disconnect_pc")],
         [back_btn(lang)]
     ]
     return InlineKeyboardMarkup(inline_keyboard=kb)
@@ -103,7 +103,7 @@ def monitors_kb(count, lang='ua'):
             kb.append(row)
             row = []
     if row: kb.append(row)
-    kb.append([InlineKeyboardButton(text="🖥 All", callback_data="screen_all")])
+    kb.append([InlineKeyboardButton(text=f"🖥 {t('all', lang)}", callback_data="screen_all")])
     kb.append([back_btn(lang)])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 

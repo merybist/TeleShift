@@ -9,7 +9,7 @@ router = Router()
 
 @router.callback_query(F.data == "menu_status")
 async def menu_status(call: CallbackQuery, lang: str):
-    await call.message.edit_text("📊 Select status:", reply_markup=status_menu_kb(lang))
+    await call.message.edit_text(t('select_status', lang), reply_markup=status_menu_kb(lang))
 
 @router.callback_query(F.data == "stat_all")
 async def stat_all(call: CallbackQuery, device_id: str, lang: str):
@@ -24,24 +24,24 @@ async def stat_all(call: CallbackQuery, device_id: str, lang: str):
             hostname = d.get('hostname', 'PC').replace('<', '&lt;').replace('>', '&gt;')
             os_info = d.get('os', 'N/A').replace('<', '&lt;').replace('>', '&gt;')
             lines = [
-                f"📊 <b>PC Status</b>\n",
+                f"{t('pc_status_header', lang)}\n",
                 f"🖥 <b>{hostname}</b>",
                 f"💻 {os_info}\n",
                 f"⚡ CPU: <b>{d.get('cpu_load', 0)}%</b>",
                 f"🧠 RAM: <b>{d.get('ram_used', 0)}</b> / {d.get('ram_total', 0)} GB ({d.get('ram_percent', 0)}%)",
-                f"💾 Disk: <b>{d.get('disk_used', 0)}</b> / {d.get('disk_total', 0)} GB (free {d.get('disk_free', 0)} GB)",
+                f"💾 Disk: <b>{d.get('disk_used', 0)}</b> / {d.get('disk_total', 0)} GB",
             ]
             gpu_name = d.get('gpu_name', 'N/A')
             if gpu_name and gpu_name != 'N/A':
                 gpu_name = gpu_name.replace('<', '&lt;').replace('>', '&gt;')
-                gpu_line = f"🎮 GPU: <b>{gpu_name}</b>"
+                gpu_line = f"{t('gpu', lang)}: <b>{gpu_name}</b>"
                 if d.get('gpu_usage') is not None: gpu_line += f" (<b>{d['gpu_usage']}%</b>)"
                 if d.get('gpu_temp') is not None: gpu_line += f" 🌡<b>{d['gpu_temp']}°C</b>"
                 lines.append(gpu_line)
             battery = d.get('battery')
             if battery is not None:
                 charge_icon = "⚡" if d.get('battery_charging') else ""
-                lines.append(f"\n🔋 Battery: <b>{battery}%</b> {charge_icon}")
+                lines.append(f"\n{t('battery', lang)}: <b>{battery}%</b> {charge_icon}")
             text = "\n".join(lines)
             await call.message.edit_text(text, reply_markup=back_kb(lang), parse_mode="HTML")
         except Exception as e:

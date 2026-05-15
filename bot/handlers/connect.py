@@ -39,12 +39,12 @@ async def receive_hash(message: Message, state: FSMContext, lang: str):
 async def process_hash(message: Message, hash_token: str, lang: str):
     rows = await db.select("connections", "*", {"hash_token": hash_token})
     if not rows:
-        await message.answer("❌ Invalid token.")
+        await message.answer(t('invalid_token', lang))
         return
 
     conn = rows[0]
     if conn["is_active"] and conn["user_id"] != message.from_user.id:
-        await message.answer("❌ Token already in use.")
+        await message.answer(t('token_in_use', lang))
         return
 
     await db.update("connections", {
