@@ -56,7 +56,16 @@ async function run() {
 
     console.log('🔨 Building for Windows...');
     try {
-        execSync('npm run build:win', { stdio: 'inherit' });
+        let buildCmd = 'npm run build && electron-builder --win';
+        
+        // Pass certificate if env vars are present
+        if (process.env.WIN_CERT_PATH && process.env.WIN_CERT_PASSWORD) {
+            console.log('🛡️ Code signing enabled via environment variables.');
+            // We use -c.win.certificateFile to override config
+            buildCmd += ` -c.win.certificateFile="${process.env.WIN_CERT_PATH}" -c.win.certificatePassword="${process.env.WIN_CERT_PASSWORD}"`;
+        }
+
+        execSync(buildCmd, { stdio: 'inherit' });
     } catch (e) {
         console.error('❌ Build failed.');
         process.exit(1);
