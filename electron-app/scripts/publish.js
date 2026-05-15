@@ -23,15 +23,24 @@ async function run() {
     if (publishAnswer.toLowerCase() === 'y') {
         console.log('📤 Publishing to GitHub...');
         
-        const releaseNotes = `
-## TeleShift Stable Release v${targetVersion}
-
-### 🔄 What's New:
-*   **Real-time App Status:** Now with ✅ indicators for running apps in the launcher.
-*   **Settings Fix:** All buttons in the Telegram bot are now fully functional.
-*   **macOS Stability:** Native shutdown/reboot/lock commands for Mac users.
-*   **Performance:** Improved uptime precision and telemetry reporting.
-        `.trim();
+        // 3. Generate dynamic Release Notes from Git commits
+        let releaseNotes = `## TeleShift Stable Release v${targetVersion}\n\n### 🔄 Що нового:\n`;
+        try {
+            const latestTag = execSync('git describe --tags --abbrev=0').toString().trim();
+            const commits = execSync(`git log ${latestTag}..HEAD --oneline`).toString().split('\n');
+            const cleanCommits = commits
+                .filter(c => c.trim().length > 0)
+                .map(c => `* ${c.substring(c.indexOf(' ') + 1)}`)
+                .join('\n');
+            
+            if (cleanCommits) {
+                releaseNotes += cleanCommits;
+            } else {
+                releaseNotes += '* Технічні виправлення та покращення стабільності.';
+            }
+        } catch (e) {
+            releaseNotes += '* Перший публічний реліз або не вдалося отримати список змін.';
+        }
 
         fs.writeFileSync('release_notes.md', releaseNotes);
 

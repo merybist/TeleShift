@@ -87,15 +87,24 @@ async function run() {
     if (publishAnswer.toLowerCase() === 'y') {
         console.log('📤 Publishing to GitHub...');
         
-        const releaseNotes = `
-## TeleShift Stable Release v${versionForTag}
-
-### 🔄 What's New:
-*   **💓 Heartbeat System:** Real-time online status tracking with precise accuracy.
-*   **🚀 Auto-Start:** Added a toggle in settings to launch the app on system startup.
-*   **✅ Process Indicators:** Improved detection of running apps (e.g., Majestic Launcher).
-*   **💬 Screen Messages:** Send text messages directly to the PC screen via the bot.
-        `.trim();
+        // 3. Generate dynamic Release Notes from Git commits
+        let releaseNotes = `## TeleShift Stable Release v${versionForTag}\n\n### 🔄 Що нового:\n`;
+        try {
+            const latestTag = execSync('git describe --tags --abbrev=0').toString().trim();
+            const commits = execSync(`git log ${latestTag}..HEAD --oneline`).toString().split('\n');
+            const cleanCommits = commits
+                .filter(c => c.trim().length > 0)
+                .map(c => `* ${c.substring(c.indexOf(' ') + 1)}`)
+                .join('\n');
+            
+            if (cleanCommits) {
+                releaseNotes += cleanCommits;
+            } else {
+                releaseNotes += '* Технічні виправлення та покращення стабільності.';
+            }
+        } catch (e) {
+            releaseNotes += '* Перший публічний реліз або не вдалося отримати список змін.';
+        }
 
         fs.writeFileSync('release_notes.md', releaseNotes);
 
