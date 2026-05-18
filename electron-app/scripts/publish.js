@@ -57,7 +57,7 @@ async function run() {
             
             console.log('Pushing code changes (non-fatal)...');
             try {
-                execSync(`git add . && git commit -m "chore: release ${targetVersion}"`, { stdio: 'ignore' });
+                execSync(`git add package.json && git commit -m "chore: release ${targetVersion}"`, { stdio: 'ignore' });
             } catch(e) {}
             
             try {

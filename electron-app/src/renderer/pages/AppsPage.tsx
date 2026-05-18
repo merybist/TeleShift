@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { dbSelect, dbSelectOne, dbInsert, dbDelete, dbSubscribe } from '../db'
 import { motion } from 'framer-motion'
 import { FolderPlus, Trash2, Box } from 'lucide-react'
-const { ipcRenderer } = require('electron')
+
+const api = window.electronAPI
 
 export default function AppsPage() {
   const [apps, setApps] = useState<any[]>([])
@@ -26,7 +27,7 @@ export default function AppsPage() {
   }
 
   async function addApp() {
-    const path = await ipcRenderer.invoke('select-file')
+    const path = await api.selectFile()
     if (path) {
       // Handle both Windows (\) and Mac (/) paths, and remove common extensions
       const name = path.split(/[\\/]/).pop()?.replace(/\.(exe|app|lnk|bat)$/i, '') || 'New App'

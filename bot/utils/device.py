@@ -1,10 +1,45 @@
 from db import db
 import asyncio
+import time
+
+# ── Rate Limiting ──────────────────────────────────────────────
+RATE_LIMIT_MAX = 5
+RATE_LIMIT_WINDOW = 5  # seconds
+
+_rate_limit_store: dict[int, list[float]] = {}
 
 
-async def push_command(device_id: str, command: str, payload: dict = None):
+class RateLimitExceeded(Exception):
+    pass
+
+
+def _check_rate_limit(user_id: int) -> None:
+    """Check if user has exceeded rate limit. Raises RateLimitExceeded if so."""
+    now = time.time()
+    if user_id not in _rate_limit_store:
+        _rate_limit_store[user_id] = []
+
+    # Remove expired timestamps
+    _rate_limit_store[user_id] = [
+        ts for ts in _rate_limit_store[user_id]
+        if now - ts < RATE_LIMIT_WINDOW
+    ]
+
+    if len(_rate_limit_store[user_id]) >= RATE_LIMIT_MAX:
+        raise RateLimitExceeded(
+            f"Rate limit exceeded: max {RATE_LIMIT_MAX} commands per {RATE_LIMIT_WINDOW}s"
+        )
+
+    _rate_limit_store[user_id].append(now)
+
+
+async def push_command(device_id: str, command: str, payload: dict = None, user_id: int = None):
     if payload is None:
         payload = {}
+
+    # Apply rate limiting if user_id is provided
+    if user_id is not None:
+        _check_rate_limit(user_id)
 
     row = await db.insert("device_commands", {
         "device_id": device_id,

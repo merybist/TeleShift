@@ -5,7 +5,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import { dbSelect, dbSelectOne, dbInsert, dbUpdate, dbDelete, dbSubscribe, usePg } from '../db'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, RefreshCw } from 'lucide-react'
-const { ipcRenderer } = require('electron')
+
+const api = window.electronAPI
 
 export default function ConnectionPage() {
   const [deviceId, setDeviceId] = useState(localStorage.getItem('device_id'))
@@ -24,7 +25,7 @@ export default function ConnectionPage() {
 
   async function checkLaunchSettings() {
     try {
-      const state = await ipcRenderer.invoke('get-launch-at-startup')
+      const state = await api.getLaunchAtStartup()
       setLaunchAtStartup(state)
     } catch (err) {
       console.error('[TeleShift][startup-check]', err)
@@ -34,7 +35,7 @@ export default function ConnectionPage() {
   async function toggleLaunchAtStartup() {
     try {
       const newState = !launchAtStartup
-      await ipcRenderer.invoke('set-launch-at-startup', newState)
+      await api.setLaunchAtStartup(newState)
       setLaunchAtStartup(newState)
     } catch (err) {
       console.error('[TeleShift][startup-toggle]', err)
@@ -43,7 +44,7 @@ export default function ConnectionPage() {
 
   useEffect(() => {
     if (!internalId) return
-    ipcRenderer.send('init-supabase', {
+    api.initSupabase({
       url: import.meta.env.VITE_SUPABASE_URL,
       key: import.meta.env.VITE_SUPABASE_ANON_KEY,
       deviceId: internalId,

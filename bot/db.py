@@ -4,11 +4,34 @@ Automatically uses raw PostgreSQL (asyncpg) if DATABASE_URL is set,
 otherwise falls back to Supabase.
 """
 import json
+import re
 import asyncio
 import logging
 from config import DATABASE_URL, SUPABASE_URL, SUPABASE_KEY
 
 logger = logging.getLogger(__name__)
+
+# Security: Whitelist of allowed table names
+ALLOWED_TABLES = frozenset([
+    'devices', 'device_commands', 'connections', 'apps', 'logs', 'users', 'settings'
+])
+
+# Security: Regex for valid SQL identifiers
+IDENTIFIER_REGEX = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def _validate_identifier(name: str) -> str:
+    """Validate that a string is a safe SQL identifier."""
+    if not IDENTIFIER_REGEX.match(name) or len(name) > 64:
+        raise ValueError(f"Invalid identifier: {name!r}")
+    return name
+
+
+def _validate_table(table: str) -> str:
+    """Validate table name against whitelist."""
+    if table not in ALLOWED_TABLES:
+        raise ValueError(f"Table not allowed: {table!r}")
+    return table
 
 
 class Database:
@@ -37,20 +60,27 @@ class Database:
     # ── SELECT ──────────────────────────────────────────────────
     async def select(self, table: str, columns: str = "*", filters: dict = None,
                      order_by: str = None, ascending: bool = True, limit: int = None) -> list[dict]:
+        _validate_table(table)
         if self.use_pg:
+            # Validate columns
+            if columns != "*":
+                cols = [_validate_identifier(c.strip()) for c in columns.split(",")]
+                columns = ", ".join(cols)
             query = f"SELECT {columns} FROM {table}"
             params = []
             if filters:
                 conds = []
                 for i, (k, v) in enumerate(filters.items(), 1):
+                    _validate_identifier(k)
                     conds.append(f"{k} = ${i}")
                     params.append(v)
                 query += " WHERE " + " AND ".join(conds)
             if order_by:
+                _validate_identifier(order_by)
                 direction = "ASC" if ascending else "DESC"
                 query += f" ORDER BY {order_by} {direction}"
             if limit:
-                query += f" LIMIT {limit}"
+                query += f" LIMIT {int(limit)}"
             rows = await self.pool.fetch(query, *params)
             return [dict(r) for r in rows]
         else:
@@ -70,7 +100,10 @@ class Database:
 
     # ── INSERT ──────────────────────────────────────────────────
     async def insert(self, table: str, data: dict) -> dict | None:
+        _validate_table(table)
         if self.use_pg:
+            for k in data.keys():
+                _validate_identifier(k)
             cols = ", ".join(data.keys())
             placeholders = ", ".join(f"${i}" for i in range(1, len(data) + 1))
             query = f"INSERT INTO {table} ({cols}) VALUES ({placeholders}) RETURNING *"
@@ -84,9 +117,11 @@ class Database:
 
     # ── UPDATE ──────────────────────────────────────────────────
     async def update(self, table: str, data: dict, filters: dict = None):
+        _validate_table(table)
         if self.use_pg:
             set_parts, params, i = [], [], 1
             for k, v in data.items():
+                _validate_identifier(k)
                 set_parts.append(f"{k} = ${i}")
                 params.append(v)
                 i += 1
@@ -94,6 +129,7 @@ class Database:
             if filters:
                 conds = []
                 for k, v in filters.items():
+                    _validate_identifier(k)
                     conds.append(f"{k} = ${i}")
                     params.append(v)
                     i += 1
@@ -109,12 +145,14 @@ class Database:
 
     # ── DELETE ──────────────────────────────────────────────────
     async def delete(self, table: str, filters: dict = None):
+        _validate_table(table)
         if self.use_pg:
             query = f"DELETE FROM {table}"
             params = []
             if filters:
                 conds = []
                 for i, (k, v) in enumerate(filters.items(), 1):
+                    _validate_identifier(k)
                     conds.append(f"{k} = ${i}")
                     params.append(v)
                 query += " WHERE " + " AND ".join(conds)
@@ -126,6 +164,15 @@ class Database:
                     q = q.eq(k, v)
                 q.execute()
             await asyncio.to_thread(_run)
+
+    # ── RAW EXECUTE (for maintenance queries) ──────────────────
+    async def execute(self, query: str, *params):
+        if self.use_pg:
+            await self.pool.execute(query, *params)
+        else:
+            await asyncio.to_thread(
+                lambda: self.sb.rpc('exec_sql', {'query': query}).execute()
+            )
 
 
 db = Database()

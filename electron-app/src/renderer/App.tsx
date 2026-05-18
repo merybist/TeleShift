@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-const { ipcRenderer } = require('electron')
 import { QrCode, LayoutGrid, Terminal, ShieldCheck, Github, Download, X, Bell } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import fluttershyImg from '../../resources/avatar.jpg'
 import ConnectionPage from './pages/ConnectionPage'
 import AppsPage from './pages/AppsPage'
 import LogsPage from './pages/LogsPage'
+
+const api = window.electronAPI
 
 function Sidebar() {
   const location = useLocation()
@@ -98,7 +99,7 @@ function WarningModal() {
   }
 
   const handleQuit = () => {
-    ipcRenderer.send('quit-app')
+    api.quitApp()
   }
 
   return (
@@ -171,26 +172,23 @@ function UpdateModal() {
   useEffect(() => {
     checkForUpdate()
 
-    const progressListener = (_: any, p: number) => {
+    const removeProgressListener = api.onUpdateProgress((p) => {
       setProgress(Math.round(p))
       setStatus('downloading')
-    }
-    const readyListener = () => {
+    })
+    const removeReadyListener = api.onUpdateReady(() => {
       setStatus('ready')
-    }
-
-    ipcRenderer.on('update-progress', progressListener)
-    ipcRenderer.on('update-ready', readyListener)
+    })
 
     return () => {
-      ipcRenderer.removeListener('update-progress', progressListener)
-      ipcRenderer.removeListener('update-ready', readyListener)
+      removeProgressListener()
+      removeReadyListener()
     }
   }, [])
 
   async function checkForUpdate() {
     try {
-      const result = await ipcRenderer.invoke('check-for-update')
+      const result = await api.checkForUpdate()
       if (!result) return
 
       const dismissed = localStorage.getItem('update_dismissed_version')
@@ -198,19 +196,19 @@ function UpdateModal() {
 
       setUpdate(result)
       setShow(true)
-      ipcRenderer.send('show-window')
+      api.showWindow()
     } catch {}
   }
 
   if (!show || !update) return null
 
   const handleStartDownload = () => {
-    ipcRenderer.send('start-download')
+    api.startDownload()
     setStatus('downloading')
   }
 
   const handleInstall = () => {
-    ipcRenderer.send('install-update')
+    api.installUpdate()
   }
 
   const handleLater = () => setShow(false)
