@@ -143,3 +143,26 @@ DROP TRIGGER IF EXISTS logs_notify ON logs;
 CREATE TRIGGER logs_notify
 AFTER INSERT ON logs
 FOR EACH ROW EXECUTE FUNCTION notify_log_insert();
+
+-- ── Indexes ──────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_device_commands_device_status
+ON device_commands(device_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_device_commands_created_at
+ON device_commands(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_connections_device_active
+ON connections(device_id, is_active);
+
+-- ── Cleanup: delete completed commands older than 2 days ─────────
+CREATE OR REPLACE FUNCTION cleanup_old_commands()
+RETURNS void AS $$
+BEGIN
+  DELETE FROM device_commands
+  WHERE status IN ('completed', 'error')
+    AND created_at < now() - interval '2 days';
+END;
+$$ LANGUAGE plpgsql;
+
+-- Schedule via pg_cron (if available) or call manually:
+-- SELECT cron.schedule('cleanup-commands', '0 4 * * *', 'SELECT cleanup_old_commands()');

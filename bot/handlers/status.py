@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from keyboards.inline import status_menu_kb, sound_menu_kb, back_kb
-from utils.device import push_command, wait_for_result, log_action
+from utils.device import push_command, wait_for_result, log_action, RateLimitExceeded
 import json
 
 router = Router()
@@ -12,8 +12,12 @@ async def menu_status(call: CallbackQuery):
 
 @router.callback_query(F.data == "stat_all")
 async def stat_all(call: CallbackQuery, device_id: str):
-    await call.message.edit_text("⏳ Fetching PC status...")
-    cmd_id = await push_command(device_id, "get_status")
+    try:
+        await call.message.edit_text("⏳ Fetching PC status...")
+        cmd_id = await push_command(device_id, "get_status", user_id=call.from_user.id)
+    except RateLimitExceeded:
+        await call.answer("⚠️ Too many commands. Please wait a moment.", show_alert=True)
+        return
     result = await wait_for_result(cmd_id)
 
     if result == "timeout":
@@ -56,13 +60,17 @@ async def stat_all(call: CallbackQuery, device_id: str):
 
             text = "\n".join(lines)
             await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="HTML")
-        except Exception as e:
-            await call.message.edit_text(f"❌ Error processing status data: {str(e)[:100]}", reply_markup=back_kb())
+        except Exception:
+            await call.message.edit_text("❌ An error occurred while processing status data. Please try again.", reply_markup=back_kb())
 
 @router.callback_query(F.data == "stat_sound")
 async def stat_sound(call: CallbackQuery, device_id: str):
-    await call.message.edit_text("⏳ Fetching sound status...")
-    cmd_id = await push_command(device_id, "get_volume")
+    try:
+        await call.message.edit_text("⏳ Fetching sound status...")
+        cmd_id = await push_command(device_id, "get_volume", user_id=call.from_user.id)
+    except RateLimitExceeded:
+        await call.answer("⚠️ Too many commands. Please wait a moment.", show_alert=True)
+        return
     result = await wait_for_result(cmd_id)
 
     if result == "timeout" or result.startswith("Error"):
@@ -80,7 +88,11 @@ async def stat_sound(call: CallbackQuery, device_id: str):
 async def ctrl_sound(call: CallbackQuery, device_id: str):
     action = call.data.split("_")[1]
 
-    cmd_id = await push_command(device_id, "set_volume", {"action": action})
+    try:
+        cmd_id = await push_command(device_id, "set_volume", {"action": action}, user_id=call.from_user.id)
+    except RateLimitExceeded:
+        await call.answer("⚠️ Too many commands. Please wait a moment.", show_alert=True)
+        return
     await call.message.edit_text("⏳ Changing...")
     result = await wait_for_result(cmd_id)
 

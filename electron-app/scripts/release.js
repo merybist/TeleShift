@@ -108,7 +108,7 @@ async function run() {
 
             console.log('Pushing code changes...');
             try {
-                execSync(`git add . && git commit -m "chore: release ${versionForTag}"`, { stdio: 'ignore' });
+                execSync(`git add package.json && git commit -m "chore: release ${versionForTag}"`, { stdio: 'ignore' });
             } catch(e) {}
 
             try {

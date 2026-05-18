@@ -68,6 +68,18 @@ async def online_watcher(bot: Bot):
         await asyncio.sleep(10)
 
 
+async def cleanup_old_commands():
+    """Background task: deletes completed/error commands older than 2 days."""
+    while True:
+        try:
+            await db.execute(
+                "DELETE FROM device_commands WHERE status IN ('completed', 'error') AND created_at < now() - interval '2 days'"
+            )
+        except Exception as e:
+            logger.error(f"Cleanup error: {e}")
+        await asyncio.sleep(3600)
+
+
 async def main():
     await db.init()
 
@@ -85,8 +97,9 @@ async def main():
     dp.include_router(launcher.router)
     dp.include_router(settings.router)
 
-    # Start background online watcher
+    # Start background tasks
     asyncio.create_task(online_watcher(bot))
+    asyncio.create_task(cleanup_old_commands())
 
     print("Bot is starting polling...")
     await dp.start_polling(bot)

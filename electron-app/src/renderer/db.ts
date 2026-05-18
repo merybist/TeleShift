@@ -7,7 +7,13 @@
  */
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const { ipcRenderer } = require('electron')
+declare global {
+  interface Window {
+    electronAPI: typeof import('../preload/index').ElectronAPI extends infer T ? T : never
+  }
+}
+
+const api = window.electronAPI
 
 const DATABASE_URL = import.meta.env.VITE_DATABASE_URL || ''
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
@@ -18,9 +24,7 @@ export const usePg = !!DATABASE_URL
 // Supabase client (only created in Supabase mode)
 let _supabase: SupabaseClient | null = null
 if (!usePg && SUPABASE_URL && SUPABASE_KEY) {
-  const WebSocket = require('ws')
   _supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-    realtime: { transport: WebSocket },
     auth: { persistSession: false }
   })
 }
@@ -37,7 +41,7 @@ export async function dbSelect(
   options?: { orderBy?: string; ascending?: boolean; limit?: number }
 ): Promise<any[]> {
   if (usePg) {
-    return ipcRenderer.invoke('db-select', {
+    return api.dbSelect({
       table, columns, filters,
       orderBy: options?.orderBy,
       ascending: options?.ascending,
@@ -59,7 +63,7 @@ export async function dbSelectOne(
   filters: Record<string, any> = {}
 ): Promise<any | null> {
   if (usePg) {
-    return ipcRenderer.invoke('db-select-one', { table, columns, filters })
+    return api.dbSelectOne({ table, columns, filters })
   } else {
     let q = _supabase!.from(table).select(columns)
     for (const [k, v] of Object.entries(filters)) q = q.eq(k, v)
@@ -70,7 +74,7 @@ export async function dbSelectOne(
 
 export async function dbInsert(table: string, data: Record<string, any>): Promise<any | null> {
   if (usePg) {
-    return ipcRenderer.invoke('db-insert', { table, data })
+    return api.dbInsert({ table, data })
   } else {
     const { data: result } = await _supabase!.from(table).insert([data]).select().single()
     return result
@@ -79,7 +83,7 @@ export async function dbInsert(table: string, data: Record<string, any>): Promis
 
 export async function dbUpdate(table: string, data: Record<string, any>, filters: Record<string, any> = {}): Promise<void> {
   if (usePg) {
-    await ipcRenderer.invoke('db-update', { table, data, filters })
+    await api.dbUpdate({ table, data, filters })
   } else {
     let q = _supabase!.from(table).update(data)
     for (const [k, v] of Object.entries(filters)) q = q.eq(k, v)
@@ -89,7 +93,7 @@ export async function dbUpdate(table: string, data: Record<string, any>, filters
 
 export async function dbDelete(table: string, filters: Record<string, any> = {}): Promise<void> {
   if (usePg) {
-    await ipcRenderer.invoke('db-delete', { table, filters })
+    await api.dbDelete({ table, filters })
   } else {
     let q = _supabase!.from(table).delete()
     for (const [k, v] of Object.entries(filters)) q = q.eq(k, v)
@@ -116,15 +120,14 @@ export function dbSubscribe(
     let subId = ''
 
     // Set up IPC listener for notifications
-    const handler = (_event: any, data: any) => {
+    const removeListener = api.onDbNotification((data) => {
       if (data.subId === subId) {
         callback(data.payload)
       }
-    }
-    ipcRenderer.on('db-notification', handler)
+    })
 
     // Register subscription in main process
-    ipcRenderer.invoke('db-subscribe', {
+    api.dbSubscribe({
       channel,
       table,
       eventType: options?.eventType || '*',
@@ -136,8 +139,8 @@ export function dbSubscribe(
     return {
       get id() { return subId },
       unsubscribe: () => {
-        ipcRenderer.removeListener('db-notification', handler)
-        if (subId) ipcRenderer.invoke('db-unsubscribe', { subId })
+        removeListener()
+        if (subId) api.dbUnsubscribe({ subId })
       }
     }
   } else {

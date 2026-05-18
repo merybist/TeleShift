@@ -1,9 +1,11 @@
-import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, shell, desktopCapturer, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage, shell, desktopCapturer, screen, session } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
-import { exec } from 'child_process'
+import { execFile, spawn } from 'child_process'
+import { existsSync, statSync } from 'fs'
+import { randomBytes, createCipheriv } from 'crypto'
 import si from 'systeminformation'
 import loudness from 'loudness'
 
@@ -13,6 +15,56 @@ let pgClient: any = null
 let tray: Tray | null = null
 let isQuitting = false
 let dbMode: 'supabase' | 'pg' = 'supabase'
+
+// ══════════════════════════════════════════════════════════════
+// Security: Whitelists for SQL injection prevention
+// ══════════════════════════════════════════════════════════════
+
+const ALLOWED_TABLES = new Set([
+  'devices', 'device_commands', 'connections', 'apps', 'logs', 'users', 'settings'
+])
+
+const IDENTIFIER_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
+function validateIdentifier(name: string): boolean {
+  return IDENTIFIER_REGEX.test(name) && name.length <= 64
+}
+
+function validateTableName(table: string): boolean {
+  return ALLOWED_TABLES.has(table)
+}
+
+function validateColumns(columns: string): boolean {
+  if (columns === '*') return true
+  return columns.split(',').every(col => validateIdentifier(col.trim()))
+}
+
+// Security: Whitelist for LISTEN channels
+const ALLOWED_PG_CHANNELS = new Set([
+  'new_command', 'connection_change', 'apps_change', 'log_insert'
+])
+
+// Security: Validate file path for launch_app
+function validateAppPath(filePath: string): boolean {
+  // Reject shell metacharacters
+  const dangerousChars = /[;&|`$(){}[\]!#~<>*?\n\r]/
+  if (dangerousChars.test(filePath)) return false
+
+  // Must be an absolute path
+  if (process.platform === 'win32') {
+    if (!/^[a-zA-Z]:\\/.test(filePath) && !filePath.startsWith('\\\\')) return false
+  } else {
+    if (!filePath.startsWith('/')) return false
+  }
+
+  // Path must exist and be a file or .app bundle
+  try {
+    const stat = statSync(filePath)
+    return stat.isFile() || stat.isDirectory() // .app bundles are directories on macOS
+  } catch {
+    return false
+  }
+}
 
 
 function createWindow() {
@@ -26,8 +78,9 @@ function createWindow() {
     autoHideMenuBar: true,
     icon: join(__dirname, '../../resources/icon.png'),
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: join(__dirname, '../preload/index.js')
     }
   })
 
@@ -68,9 +121,21 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
+  // Content Security Policy
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co"
+        ]
+      }
+    })
+  })
+
   createWindow()
   createTray()
-  
+
   // Start on boot
   app.setLoginItemSettings({
     openAtLogin: true,
@@ -319,6 +384,15 @@ async function initPostgres(connectionString: string, deviceId: string) {
 
 ipcMain.handle('db-select', async (_event, { table, columns, filters, orderBy, ascending, limit }) => {
   try {
+    if (!validateTableName(table)) throw new Error('Invalid table name')
+    if (columns && !validateColumns(columns)) throw new Error('Invalid column names')
+    if (orderBy && !validateIdentifier(orderBy)) throw new Error('Invalid orderBy column')
+    if (filters) {
+      for (const k of Object.keys(filters)) {
+        if (!validateIdentifier(k)) throw new Error('Invalid filter column name')
+      }
+    }
+
     if (dbMode === 'pg' && pgClient) {
       let query = `SELECT ${columns || '*'} FROM ${table}`
       const params: any[] = []
@@ -328,7 +402,10 @@ ipcMain.handle('db-select', async (_event, { table, columns, filters, orderBy, a
         query += ' WHERE ' + conds.join(' AND ')
       }
       if (orderBy) query += ` ORDER BY ${orderBy} ${ascending === false ? 'DESC' : 'ASC'}`
-      if (limit) query += ` LIMIT ${limit}`
+      if (limit) {
+        params.push(limit)
+        query += ` LIMIT $${idx++}`
+      }
       const res = await pgClient.query(query, params)
       return res.rows
     } else if (supabase) {
@@ -347,6 +424,14 @@ ipcMain.handle('db-select', async (_event, { table, columns, filters, orderBy, a
 
 ipcMain.handle('db-select-one', async (_event, { table, columns, filters }) => {
   try {
+    if (!validateTableName(table)) throw new Error('Invalid table name')
+    if (columns && !validateColumns(columns)) throw new Error('Invalid column names')
+    if (filters) {
+      for (const k of Object.keys(filters)) {
+        if (!validateIdentifier(k)) throw new Error('Invalid filter column name')
+      }
+    }
+
     if (dbMode === 'pg' && pgClient) {
       let query = `SELECT ${columns || '*'} FROM ${table}`
       const params: any[] = []
@@ -372,6 +457,11 @@ ipcMain.handle('db-select-one', async (_event, { table, columns, filters }) => {
 
 ipcMain.handle('db-insert', async (_event, { table, data }) => {
   try {
+    if (!validateTableName(table)) throw new Error('Invalid table name')
+    for (const k of Object.keys(data)) {
+      if (!validateIdentifier(k)) throw new Error('Invalid column name in data')
+    }
+
     if (dbMode === 'pg' && pgClient) {
       const cols = Object.keys(data).join(', ')
       const placeholders = Object.keys(data).map((_, i) => `$${i + 1}`).join(', ')
@@ -389,6 +479,16 @@ ipcMain.handle('db-insert', async (_event, { table, data }) => {
 
 ipcMain.handle('db-update', async (_event, { table, data, filters }) => {
   try {
+    if (!validateTableName(table)) throw new Error('Invalid table name')
+    for (const k of Object.keys(data)) {
+      if (!validateIdentifier(k)) throw new Error('Invalid column name in data')
+    }
+    if (filters) {
+      for (const k of Object.keys(filters)) {
+        if (!validateIdentifier(k)) throw new Error('Invalid filter column name')
+      }
+    }
+
     if (dbMode === 'pg' && pgClient) {
       const params: any[] = []
       let idx = 1
@@ -411,18 +511,24 @@ ipcMain.handle('db-update', async (_event, { table, data, filters }) => {
 
 ipcMain.handle('db-delete', async (_event, { table, filters }) => {
   try {
+    if (!validateTableName(table)) throw new Error('Invalid table name')
+    if (!filters || Object.keys(filters).length === 0) {
+      throw new Error('DELETE without filters is not allowed')
+    }
+    for (const k of Object.keys(filters)) {
+      if (!validateIdentifier(k)) throw new Error('Invalid filter column name')
+    }
+
     if (dbMode === 'pg' && pgClient) {
       const params: any[] = []
       let idx = 1
       let query = `DELETE FROM ${table}`
-      if (filters && Object.keys(filters).length) {
-        const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
-        query += ' WHERE ' + conds.join(' AND ')
-      }
+      const conds = Object.entries(filters).map(([k, v]) => { params.push(v); return `${k} = $${idx++}` })
+      query += ' WHERE ' + conds.join(' AND ')
       await pgClient.query(query, params)
     } else if (supabase) {
       let q = supabase.from(table).delete()
-      for (const [k, v] of Object.entries(filters || {})) q = q.eq(k, v)
+      for (const [k, v] of Object.entries(filters)) q = q.eq(k, v)
       await q
     }
   } catch (e) {
@@ -441,7 +547,7 @@ ipcMain.handle('db-subscribe', async (_event, { channel, table, eventType, filte
     const subId = `${channel}_${Date.now()}`
 
     if (dbMode === 'pg' && pgClient) {
-      // PG mode — listener is already active from init, 
+      // PG mode — listener is already active from init,
       // we just need to forward matching notifications to renderer
       const listener = (msg: any) => {
         try {
@@ -456,6 +562,11 @@ ipcMain.handle('db-subscribe', async (_event, { channel, table, eventType, filte
       if (table === 'connections') pgChannel = 'connection_change'
       if (table === 'apps') pgChannel = 'apps_change'
       if (table === 'logs') pgChannel = 'log_insert'
+
+      // Validate channel against whitelist
+      if (!ALLOWED_PG_CHANNELS.has(pgChannel)) {
+        throw new Error(`Invalid PG channel: ${pgChannel}`)
+      }
 
       await pgClient.query(`LISTEN ${pgChannel}`)
       pgClient.on('notification', listener)
@@ -528,16 +639,49 @@ async function processCommand(cmd: any) {
 
         switch(cmd.command) {
             case 'shutdown':
-                if (process.platform === 'darwin') exec('osascript -e "tell application \"System Events\" to shut down"')
-                else exec('shutdown /s /t 1')
+                await new Promise<void>((resolve, reject) => {
+                    if (process.platform === 'darwin') {
+                        execFile('osascript', ['-e', 'tell application "System Events" to shut down'], (err) => {
+                            if (err) { console.error('[TeleShift][shutdown]', err); reject(err) }
+                            else resolve()
+                        })
+                    } else {
+                        execFile('shutdown', ['/s', '/t', '1'], (err) => {
+                            if (err) { console.error('[TeleShift][shutdown]', err); reject(err) }
+                            else resolve()
+                        })
+                    }
+                })
                 break
             case 'reboot':
-                if (process.platform === 'darwin') exec('osascript -e "tell application \"System Events\" to restart"')
-                else exec('shutdown /r /t 1')
+                await new Promise<void>((resolve, reject) => {
+                    if (process.platform === 'darwin') {
+                        execFile('osascript', ['-e', 'tell application "System Events" to restart'], (err) => {
+                            if (err) { console.error('[TeleShift][reboot]', err); reject(err) }
+                            else resolve()
+                        })
+                    } else {
+                        execFile('shutdown', ['/r', '/t', '1'], (err) => {
+                            if (err) { console.error('[TeleShift][reboot]', err); reject(err) }
+                            else resolve()
+                        })
+                    }
+                })
                 break
             case 'lock':
-                if (process.platform === 'darwin') exec('osascript -e "tell application \"System Events\" to sleep" & pmset displaysleepnow')
-                else exec('rundll32.exe user32.dll,LockWorkStation')
+                await new Promise<void>((resolve, reject) => {
+                    if (process.platform === 'darwin') {
+                        execFile('pmset', ['displaysleepnow'], (err) => {
+                            if (err) { console.error('[TeleShift][lock]', err); reject(err) }
+                            else resolve()
+                        })
+                    } else {
+                        execFile('rundll32.exe', ['user32.dll,LockWorkStation'], (err) => {
+                            if (err) { console.error('[TeleShift][lock]', err); reject(err) }
+                            else resolve()
+                        })
+                    }
+                })
                 break
             case 'check_apps':
                 try {
@@ -545,20 +689,20 @@ async function processCommand(cmd: any) {
                     const processes = await si.processes()
                     const runningPaths = processes.list.map(p => p.path.toLowerCase())
                     const runningNames = processes.list.map(p => p.name.toLowerCase())
-                    
+
                     const statusMap: any = {}
                     for (const app of apps) {
                         const appPath = app.path.toLowerCase()
                         const fileName = (appPath.split(/[\\/]/).pop() || '').toLowerCase()
                         const fileNameNoExt = fileName.replace(/\.[^/.]+$/, "")
-                        
-                        const isRunning = runningPaths.some(p => p.includes(appPath)) || 
-                                          runningNames.some(n => 
-                                            n === fileName || 
-                                            n === fileNameNoExt || 
+
+                        const isRunning = runningPaths.some(p => p.includes(appPath)) ||
+                                          runningNames.some(n =>
+                                            n === fileName ||
+                                            n === fileNameNoExt ||
                                             n.includes(fileNameNoExt)
                                           )
-                        
+
                         statusMap[app.id] = isRunning
                     }
                     result = JSON.stringify(statusMap)
@@ -635,30 +779,66 @@ async function processCommand(cmd: any) {
             case 'take_screenshot':
                 const primaryDisplay = screen.getPrimaryDisplay()
                 const { width, height } = primaryDisplay.size
-                
+
                 const sources = await desktopCapturer.getSources({
                     types: ['screen'],
                     thumbnailSize: { width, height }
                 })
-                
+
                 const source = sources[0] // Primary screen
                 if (!source) throw new Error('No screen source found')
-                
+
                 const imgBuffer = source.thumbnail.toPNG()
-                
-                if (dbMode === 'supabase' && supabase) {
-                    const fileName = `screenshot_${Date.now()}.png`
-                    const { data, error } = await supabase.storage.from('screenshots').upload(fileName, imgBuffer, { contentType: 'image/png' })
-                    if (error) throw error
-                    const { data: pubData } = supabase.storage.from('screenshots').getPublicUrl(fileName)
-                    result = pubData.publicUrl
-                } else {
-                    result = (imgBuffer as Buffer).toString('base64')
-                }
+
+                // Encrypt screenshot with AES-256-GCM
+                const encKey = randomBytes(32)
+                const iv = randomBytes(12)
+                const cipher = createCipheriv('aes-256-gcm', encKey, iv)
+                const encrypted = Buffer.concat([cipher.update(imgBuffer), cipher.final()])
+                const authTag = cipher.getAuthTag()
+
+                // Store encrypted data as base64 in the result field (no Supabase Storage)
+                const encryptedPayload = JSON.stringify({
+                    encrypted: encrypted.toString('base64'),
+                    iv: iv.toString('base64'),
+                    authTag: authTag.toString('base64'),
+                    key: encKey.toString('base64')
+                })
+                result = encryptedPayload
+
+                // Auto-delete the result after 3 seconds
+                const screenshotCmdId = cmd.id
+                setTimeout(async () => {
+                    try {
+                        await dbUpdate('device_commands', { result: null }, { id: screenshotCmdId })
+                        console.log('[TeleShift][screenshot] Auto-deleted encrypted screenshot data')
+                    } catch (e) {
+                        console.error('[TeleShift][screenshot-cleanup]', e)
+                    }
+                }, 3000)
                 break
             case 'launch_app':
-                if (process.platform === 'darwin') exec(`open "${cmd.payload.path}"`)
-                else exec(`start "" "${cmd.payload.path}"`)
+                const appPath = cmd.payload?.path
+                if (!appPath || !validateAppPath(appPath)) {
+                    throw new Error('Invalid or non-existent application path')
+                }
+                await new Promise<void>((resolve, reject) => {
+                    if (process.platform === 'darwin') {
+                        execFile('open', [appPath], (err) => {
+                            if (err) { console.error('[TeleShift][launch_app]', err); reject(err) }
+                            else resolve()
+                        })
+                    } else {
+                        // On Windows, use spawn with shell:false to avoid injection
+                        const child = spawn(appPath, [], { detached: true, stdio: 'ignore' })
+                        child.unref()
+                        child.on('error', (err) => {
+                            console.error('[TeleShift][launch_app]', err)
+                            reject(err)
+                        })
+                        resolve()
+                    }
+                })
                 break
             default:
                 throw new Error('Unknown command: ' + cmd.command)

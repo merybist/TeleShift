@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from keyboards.inline import confirm_kb
-from utils.device import log_action, push_command
+from utils.device import log_action, push_command, RateLimitExceeded
 
 router = Router()
 
@@ -11,9 +11,12 @@ async def ask_power_off(call: CallbackQuery):
 
 @router.callback_query(F.data == "off_yes")
 async def do_power_off(call: CallbackQuery, device_id: str):
-    await log_action(device_id, call.from_user.id, call.from_user.username, "Shut down PC")
-    await push_command(device_id, "shutdown")
-    await call.message.edit_text("✅ Shutdown command sent to PC.")
+    try:
+        await log_action(device_id, call.from_user.id, call.from_user.username, "Shut down PC")
+        await push_command(device_id, "shutdown", user_id=call.from_user.id)
+        await call.message.edit_text("✅ Shutdown command sent to PC.")
+    except RateLimitExceeded:
+        await call.answer("⚠️ Too many commands. Please wait a moment.", show_alert=True)
 
 @router.callback_query(F.data == "power_reboot")
 async def ask_reboot(call: CallbackQuery):
@@ -21,12 +24,18 @@ async def ask_reboot(call: CallbackQuery):
 
 @router.callback_query(F.data == "reboot_yes")
 async def do_reboot(call: CallbackQuery, device_id: str):
-    await log_action(device_id, call.from_user.id, call.from_user.username, "Restarted PC")
-    await push_command(device_id, "reboot")
-    await call.message.edit_text("✅ Restart command sent to PC.")
+    try:
+        await log_action(device_id, call.from_user.id, call.from_user.username, "Restarted PC")
+        await push_command(device_id, "reboot", user_id=call.from_user.id)
+        await call.message.edit_text("✅ Restart command sent to PC.")
+    except RateLimitExceeded:
+        await call.answer("⚠️ Too many commands. Please wait a moment.", show_alert=True)
 
 @router.callback_query(F.data == "sys_lock")
 async def do_lock(call: CallbackQuery, device_id: str):
-    await log_action(device_id, call.from_user.id, call.from_user.username, "Locked PC")
-    await push_command(device_id, "lock")
-    await call.answer("🔒 Lock command sent")
+    try:
+        await log_action(device_id, call.from_user.id, call.from_user.username, "Locked PC")
+        await push_command(device_id, "lock", user_id=call.from_user.id)
+        await call.answer("🔒 Lock command sent")
+    except RateLimitExceeded:
+        await call.answer("⚠️ Too many commands. Please wait a moment.", show_alert=True)

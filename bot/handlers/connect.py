@@ -7,7 +7,12 @@ from keyboards.inline import connect_info_kb, main_menu_kb
 from states.forms import ConnectForm
 from utils.device import log_action
 
+import re
+
 router = Router()
+
+# Security: hash_token must be exactly 12 alphanumeric characters
+HASH_TOKEN_REGEX = re.compile(r'^[a-zA-Z0-9_-]{12}$')
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, is_connected: bool, state: FSMContext):
@@ -36,6 +41,11 @@ async def receive_hash(message: Message, state: FSMContext):
     await state.clear()
 
 async def process_hash(message: Message, hash_token: str):
+    # Validate hash_token format
+    if not hash_token or not HASH_TOKEN_REGEX.match(hash_token):
+        await message.answer("❌ Invalid token format. Must be exactly 12 characters.")
+        return
+
     # Find connection by hash token
     rows = await db.select("connections", "*", {"hash_token": hash_token})
 
