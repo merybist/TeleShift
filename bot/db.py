@@ -170,9 +170,21 @@ class Database:
         if self.use_pg:
             await self.pool.execute(query, *params)
         else:
-            await asyncio.to_thread(
-                lambda: self.sb.rpc('exec_sql', {'query': query}).execute()
+            raise NotImplementedError("Raw SQL not supported in Supabase mode. Use delete_old_commands() instead.")
+
+    # ── CLEANUP (works with both backends) ─────────────────────
+    async def delete_old_commands(self, days: int = 2):
+        if self.use_pg:
+            await self.pool.execute(
+                "DELETE FROM device_commands WHERE status IN ('completed', 'error') AND created_at < now() - $1::interval",
+                f"{days} days"
             )
+        else:
+            from datetime import datetime, timezone, timedelta
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            def _run():
+                self.sb.table('device_commands').delete().in_('status', ['completed', 'error']).lt('created_at', cutoff).execute()
+            await asyncio.to_thread(_run)
 
 
 db = Database()

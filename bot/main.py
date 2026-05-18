@@ -72,9 +72,7 @@ async def cleanup_old_commands():
     """Background task: deletes completed/error commands older than 2 days."""
     while True:
         try:
-            await db.execute(
-                "DELETE FROM device_commands WHERE status IN ('completed', 'error') AND created_at < now() - interval '2 days'"
-            )
+            await db.delete_old_commands(days=2)
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
         await asyncio.sleep(3600)
