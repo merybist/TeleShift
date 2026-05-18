@@ -166,3 +166,55 @@ $$ LANGUAGE plpgsql;
 
 -- Schedule via pg_cron (if available) or call manually:
 -- SELECT cron.schedule('cleanup-commands', '0 4 * * *', 'SELECT cleanup_old_commands()');
+
+-- ── Row Level Security ───────────────────────────────────────────
+-- Electron agent uses anon key with device_id passed via request header (apikey claim).
+-- Bot uses service_role key which bypasses RLS entirely.
+-- RLS policies restrict anon access to only rows matching the device_id from the request header.
+
+-- Helper: extract device_id from custom request header
+CREATE OR REPLACE FUNCTION requesting_device_id()
+RETURNS uuid AS $$
+BEGIN
+  RETURN COALESCE(
+    current_setting('request.headers', true)::json->>'x-device-id',
+    '00000000-0000-0000-0000-000000000000'
+  )::uuid;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- devices
+ALTER TABLE devices ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "devices_select_own" ON devices FOR SELECT USING (device_id = requesting_device_id());
+CREATE POLICY "devices_update_own" ON devices FOR UPDATE USING (device_id = requesting_device_id());
+CREATE POLICY "devices_insert_own" ON devices FOR INSERT WITH CHECK (device_id = requesting_device_id());
+
+-- connections
+ALTER TABLE connections ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "connections_select_own" ON connections FOR SELECT USING (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+CREATE POLICY "connections_insert_own" ON connections FOR INSERT WITH CHECK (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+CREATE POLICY "connections_update_own" ON connections FOR UPDATE USING (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+
+-- device_commands
+ALTER TABLE device_commands ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "commands_select_own" ON device_commands FOR SELECT USING (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+CREATE POLICY "commands_update_own" ON device_commands FOR UPDATE USING (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+CREATE POLICY "commands_insert_own" ON device_commands FOR INSERT WITH CHECK (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+
+-- apps
+ALTER TABLE apps ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "apps_select_own" ON apps FOR SELECT USING (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+CREATE POLICY "apps_insert_own" ON apps FOR INSERT WITH CHECK (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+CREATE POLICY "apps_update_own" ON apps FOR UPDATE USING (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+CREATE POLICY "apps_delete_own" ON apps FOR DELETE USING (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+
+-- settings
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "settings_select_own" ON settings FOR SELECT USING (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+CREATE POLICY "settings_insert_own" ON settings FOR INSERT WITH CHECK (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+CREATE POLICY "settings_update_own" ON settings FOR UPDATE USING (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+
+-- logs
+ALTER TABLE logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "logs_select_own" ON logs FOR SELECT USING (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
+CREATE POLICY "logs_insert_own" ON logs FOR INSERT WITH CHECK (device_id IN (SELECT id FROM devices WHERE device_id = requesting_device_id()));
