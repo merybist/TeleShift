@@ -65,6 +65,8 @@ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+ALTER TABLE connections REPLICA IDENTITY FULL;
+
 DO $$
 BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE apps;

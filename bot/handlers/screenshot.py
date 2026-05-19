@@ -7,6 +7,7 @@ from locales import t
 from keyboards.inline import back_kb
 from utils.device import push_command, wait_for_result, log_action, RateLimitExceeded, DeviceOffline
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from db import db
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -15,7 +16,7 @@ router = Router()
 @router.callback_query(F.data == "menu_screenshot")
 async def menu_screen(call: CallbackQuery, device_id: str, lang: str = "en"):
     try:
-        cmd_id = await push_command(device_id, "take_screenshot", user_id=call.from_user.id)
+        cmd_id = await push_command(device_id, "take_screenshot", payload={"quality": quality}, user_id=call.from_user.id)
     except RateLimitExceeded:
         await call.answer(t("rate_limit", lang), show_alert=True)
         return
