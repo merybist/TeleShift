@@ -6,13 +6,19 @@ from aiogram.types import CallbackQuery, URLInputFile, BufferedInputFile
 from keyboards.inline import monitors_kb, back_kb
 from utils.device import push_command, wait_for_result, log_action, RateLimitExceeded
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from db import db
 
 router = Router()
 
 @router.callback_query(F.data == "menu_screenshot")
 async def menu_screen(call: CallbackQuery, device_id: str):
+    settings_rows = await db.select("settings", "screenshot_quality", {"device_id": device_id})
+    quality = "high"
+    if settings_rows:
+        quality = settings_rows[0].get("screenshot_quality", "high")
+
     try:
-        cmd_id = await push_command(device_id, "take_screenshot", user_id=call.from_user.id)
+        cmd_id = await push_command(device_id, "take_screenshot", payload={"quality": quality}, user_id=call.from_user.id)
     except RateLimitExceeded:
         await call.answer("⚠️ Too many commands. Please wait a moment.", show_alert=True)
         return
@@ -57,5 +63,5 @@ async def menu_screen(call: CallbackQuery, device_id: str):
         try:
             await call.message.answer_photo(photo, reply_markup=back_kb())
             await call.message.delete()
-        except:
+        except Exception as e:
             await call.message.edit_text("❌ Error loading photo.", reply_markup=back_kb())

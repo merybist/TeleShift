@@ -7,6 +7,10 @@ RATE_LIMIT_MAX = 5
 RATE_LIMIT_WINDOW = 5  # seconds
 
 _rate_limit_store: dict[int, list[float]] = {}
+_device_rate_limit_store: dict[str, list[float]] = {}
+
+DEVICE_RATE_LIMIT_MAX = 10
+DEVICE_RATE_LIMIT_WINDOW = 10
 
 
 class RateLimitExceeded(Exception):
@@ -33,13 +37,36 @@ def _check_rate_limit(user_id: int) -> None:
     _rate_limit_store[user_id].append(now)
 
 
+def _check_device_rate_limit(device_id: str) -> None:
+    """Check if device has exceeded rate limit. Raises RateLimitExceeded if so."""
+    now = time.time()
+    if device_id not in _device_rate_limit_store:
+        _device_rate_limit_store[device_id] = []
+
+    _device_rate_limit_store[device_id] = [
+        ts for ts in _device_rate_limit_store[device_id]
+        if now - ts < DEVICE_RATE_LIMIT_WINDOW
+    ]
+
+    if len(_device_rate_limit_store[device_id]) >= DEVICE_RATE_LIMIT_MAX:
+        raise RateLimitExceeded(
+            f"Device rate limit exceeded: max {DEVICE_RATE_LIMIT_MAX} commands per {DEVICE_RATE_LIMIT_WINDOW}s"
+        )
+
+    _device_rate_limit_store[device_id].append(now)
+
+
 async def push_command(device_id: str, command: str, payload: dict = None, user_id: int = None):
     if payload is None:
         payload = {}
 
-    # Apply rate limiting if user_id is provided
     if user_id is not None:
         _check_rate_limit(user_id)
+        conn = await db.select("connections", "id", {"device_id": device_id, "user_id": user_id, "is_active": True})
+        if not conn:
+            raise PermissionError("User does not own this device")
+
+    _check_device_rate_limit(device_id)
 
     row = await db.insert("device_commands", {
         "device_id": device_id,

@@ -9,7 +9,7 @@ import { CheckCircle2, RefreshCw } from 'lucide-react'
 const api = window.electronAPI
 
 export default function ConnectionPage() {
-  const [deviceId, setDeviceId] = useState(localStorage.getItem('device_id'))
+  const [deviceId, setDeviceId] = useState<string | null>(null)
   const [internalId, setInternalId] = useState<string | null>(null)
   const [hash, setHash] = useState('')
   const [connection, setConnection] = useState<any>(null)
@@ -48,7 +48,7 @@ export default function ConnectionPage() {
       url: import.meta.env.VITE_SUPABASE_URL,
       key: import.meta.env.VITE_SUPABASE_ANON_KEY,
       deviceId: internalId,
-      databaseUrl: import.meta.env.VITE_DATABASE_URL || ''
+      databaseUrl: usePg ? 'pg' : ''
     })
   }, [internalId])
 
@@ -61,7 +61,12 @@ export default function ConnectionPage() {
       (payload) => setConnection(payload),
       { filter: `device_id=eq.${internalId}` }
     )
-    return () => sub.unsubscribe()
+    // Polling fallback — check connection state every 10s
+    const pollInterval = setInterval(() => fetchConnection(), 10000)
+    return () => {
+      sub.unsubscribe()
+      clearInterval(pollInterval)
+    }
   }, [internalId])
 
   useEffect(() => {
@@ -82,10 +87,10 @@ export default function ConnectionPage() {
 
   async function initDevice() {
     try {
-      let currentId = localStorage.getItem('device_id')
+      let currentId = await api.getDeviceId()
       if (!currentId) {
         currentId = uuidv4()
-        localStorage.setItem('device_id', currentId)
+        await api.setDeviceId(currentId)
       }
       setDeviceId(currentId)
 

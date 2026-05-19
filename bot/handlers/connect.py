@@ -8,11 +8,17 @@ from states.forms import ConnectForm
 from utils.device import log_action
 
 import re
+import time
 
 router = Router()
 
 # Security: hash_token must be exactly 12 alphanumeric characters
 HASH_TOKEN_REGEX = re.compile(r'^[a-zA-Z0-9_-]{12}$')
+
+# Rate limit for connection attempts
+CONNECT_RATE_LIMIT_MAX = 3
+CONNECT_RATE_LIMIT_WINDOW = 60
+_connect_attempts: dict[int, list[float]] = {}
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, is_connected: bool, state: FSMContext):
@@ -41,6 +47,16 @@ async def receive_hash(message: Message, state: FSMContext):
     await state.clear()
 
 async def process_hash(message: Message, hash_token: str):
+    # Rate limit connection attempts
+    user_id = message.from_user.id
+    now = time.time()
+    attempts = _connect_attempts.setdefault(user_id, [])
+    attempts[:] = [t for t in attempts if now - t < CONNECT_RATE_LIMIT_WINDOW]
+    if len(attempts) >= CONNECT_RATE_LIMIT_MAX:
+        await message.answer("⏳ Too many attempts. Try again in 1 minute.")
+        return
+    attempts.append(now)
+
     # Validate hash_token format
     if not hash_token or not HASH_TOKEN_REGEX.match(hash_token):
         await message.answer("❌ Invalid token format. Must be exactly 12 characters.")
