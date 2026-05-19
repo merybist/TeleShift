@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from db import db
+from locales import t
 from keyboards.inline import connect_info_kb, main_menu_kb
 from states.forms import ConnectForm
 from utils.device import log_action
@@ -12,67 +13,53 @@ import time
 
 router = Router()
 
-# Security: hash_token must be exactly 12 alphanumeric characters
 HASH_TOKEN_REGEX = re.compile(r'^[a-zA-Z0-9_-]{12}$')
 
-# Rate limit for connection attempts
-CONNECT_RATE_LIMIT_MAX = 3
-CONNECT_RATE_LIMIT_WINDOW = 60
-_connect_attempts: dict[int, list[float]] = {}
 
 @router.message(Command("start"))
-async def cmd_start(message: Message, is_connected: bool, state: FSMContext):
+async def cmd_start(message: Message, is_connected: bool, lang: str = "en", state: FSMContext = None):
     args = message.text.split()
     if len(args) > 1:
         hash_token = args[1]
-        await process_hash(message, hash_token)
+        await process_hash(message, hash_token, lang)
     elif is_connected:
-        await message.answer("Main Menu", reply_markup=main_menu_kb())
+        await message.answer(t("main_menu", lang), reply_markup=main_menu_kb(lang))
     else:
-        await message.answer("Your account is not connected to any PC.", reply_markup=connect_info_kb())
+        await message.answer(t("not_connected", lang), reply_markup=connect_info_kb(lang))
+
 
 @router.callback_query(F.data == "connect_info")
-async def connect_info(call: CallbackQuery):
-    text = "To connect, scan the QR code in the app or enter the hash manually."
-    await call.message.edit_text(text, reply_markup=connect_info_kb())
+async def connect_info(call: CallbackQuery, lang: str = "en"):
+    await call.message.edit_text(t("connect_info", lang), reply_markup=connect_info_kb(lang))
+
 
 @router.callback_query(F.data == "enter_hash")
-async def ask_hash(call: CallbackQuery, state: FSMContext):
-    await call.message.edit_text("Enter the hash (12 characters):")
+async def ask_hash(call: CallbackQuery, lang: str = "en", state: FSMContext = None):
+    await call.message.edit_text(t("enter_hash_prompt", lang))
     await state.set_state(ConnectForm.hash)
 
+
 @router.message(ConnectForm.hash)
-async def receive_hash(message: Message, state: FSMContext):
-    await process_hash(message, message.text)
+async def receive_hash(message: Message, lang: str = "en", state: FSMContext = None):
+    await process_hash(message, message.text, lang)
     await state.clear()
 
-async def process_hash(message: Message, hash_token: str):
-    # Rate limit connection attempts
-    user_id = message.from_user.id
-    now = time.time()
-    attempts = _connect_attempts.setdefault(user_id, [])
-    attempts[:] = [t for t in attempts if now - t < CONNECT_RATE_LIMIT_WINDOW]
-    if len(attempts) >= CONNECT_RATE_LIMIT_MAX:
-        await message.answer("⏳ Too many attempts. Try again in 1 minute.")
-        return
-    attempts.append(now)
 
-    # Validate hash_token format
+async def process_hash(message: Message, hash_token: str, lang: str = "en"):
     if not hash_token or not HASH_TOKEN_REGEX.match(hash_token):
-        await message.answer("❌ Invalid token format. Must be exactly 12 characters.")
+        await message.answer(t("invalid_token", lang))
         return
 
-    # Find connection by hash token
     rows = await db.select("connections", "*", {"hash_token": hash_token})
 
     if not rows:
-        await message.answer("❌ Invalid token or token has expired.")
+        await message.answer(t("token_expired", lang))
         return
 
     conn = rows[0]
 
     if conn["is_active"] and conn["user_id"] != message.from_user.id:
-        await message.answer("❌ This token is already in use by another user. Generate a new one in the app.")
+        await message.answer(t("token_in_use", lang))
         return
 
     await db.update("connections", {
@@ -82,5 +69,16 @@ async def process_hash(message: Message, hash_token: str):
         "first_name": message.from_user.first_name
     }, {"id": conn["id"]})
 
+    # Create default settings row if not exists
+    existing_settings = await db.select_one("settings", "device_id", {"device_id": conn["device_id"]})
+    if not existing_settings:
+        await db.insert("settings", {
+            "device_id": conn["device_id"],
+            "notify_on_command": True,
+            "notify_online": True,
+            "screenshot_quality": "high",
+            "language": "en"
+        })
+
     await log_action(conn["device_id"], message.from_user.id, message.from_user.username, "Connected device")
-    await message.answer("✅ PC successfully connected!\nMain Menu:", reply_markup=main_menu_kb())
+    await message.answer(t("connected_success", lang), reply_markup=main_menu_kb(lang))

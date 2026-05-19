@@ -1,10 +1,15 @@
 from db import db
 import asyncio
 import time
+import logging
+from datetime import datetime, timezone, timedelta
+
+logger = logging.getLogger(__name__)
 
 # ── Rate Limiting ──────────────────────────────────────────────
 RATE_LIMIT_MAX = 5
 RATE_LIMIT_WINDOW = 5  # seconds
+HEARTBEAT_TIMEOUT = timedelta(seconds=60)
 
 _rate_limit_store: dict[int, list[float]] = {}
 _device_rate_limit_store: dict[str, list[float]] = {}
@@ -17,13 +22,15 @@ class RateLimitExceeded(Exception):
     pass
 
 
+class DeviceOffline(Exception):
+    pass
+
+
 def _check_rate_limit(user_id: int) -> None:
-    """Check if user has exceeded rate limit. Raises RateLimitExceeded if so."""
     now = time.time()
     if user_id not in _rate_limit_store:
         _rate_limit_store[user_id] = []
 
-    # Remove expired timestamps
     _rate_limit_store[user_id] = [
         ts for ts in _rate_limit_store[user_id]
         if now - ts < RATE_LIMIT_WINDOW
@@ -37,23 +44,26 @@ def _check_rate_limit(user_id: int) -> None:
     _rate_limit_store[user_id].append(now)
 
 
-def _check_device_rate_limit(device_id: str) -> None:
-    """Check if device has exceeded rate limit. Raises RateLimitExceeded if so."""
-    now = time.time()
-    if device_id not in _device_rate_limit_store:
-        _device_rate_limit_store[device_id] = []
+async def is_device_online(device_id: str, mark_offline: bool = True) -> bool:
+    dev = await db.select_one("devices", "is_online, last_seen_at", {"id": device_id})
+    if not dev or not dev.get("is_online"):
+        return False
 
-    _device_rate_limit_store[device_id] = [
-        ts for ts in _device_rate_limit_store[device_id]
-        if now - ts < DEVICE_RATE_LIMIT_WINDOW
-    ]
+    last_seen_at = dev.get("last_seen_at")
+    if not last_seen_at:
+        return False
 
-    if len(_device_rate_limit_store[device_id]) >= DEVICE_RATE_LIMIT_MAX:
-        raise RateLimitExceeded(
-            f"Device rate limit exceeded: max {DEVICE_RATE_LIMIT_MAX} commands per {DEVICE_RATE_LIMIT_WINDOW}s"
-        )
+    if isinstance(last_seen_at, str):
+        last_seen_at = datetime.fromisoformat(last_seen_at.replace("Z", "+00:00"))
+    if last_seen_at.tzinfo is None:
+        last_seen_at = last_seen_at.replace(tzinfo=timezone.utc)
 
-    _device_rate_limit_store[device_id].append(now)
+    online = (datetime.now(timezone.utc) - last_seen_at) < HEARTBEAT_TIMEOUT
+
+    if not online and mark_offline:
+        await db.update("devices", {"is_online": False}, {"id": device_id})
+
+    return online
 
 
 async def push_command(device_id: str, command: str, payload: dict = None, user_id: int = None):
@@ -67,6 +77,9 @@ async def push_command(device_id: str, command: str, payload: dict = None, user_
             raise PermissionError("User does not own this device")
 
     _check_device_rate_limit(device_id)
+
+    if not await is_device_online(device_id):
+        raise DeviceOffline("Device is offline")
 
     row = await db.insert("device_commands", {
         "device_id": device_id,

@@ -131,7 +131,6 @@ function WarningModal() {
           </a>
 
           <a href="https://merybist.com" target="_blank" rel="noreferrer" className="relative flex-1 bg-indigo-900/20 hover:bg-indigo-900/40 border border-indigo-500/20 rounded-2xl p-5 overflow-hidden group transition-all text-left">
-            <img src="https://github.com/merybist.png" alt="Author Avatar" className="absolute right-0 top-1/2 -translate-y-1/2 w-32 h-32 object-contain opacity-[0.35] mix-blend-screen group-hover:opacity-[0.5] transition-all duration-500 group-hover:scale-110" style={{ maskImage: 'radial-gradient(circle at center, black 45%, transparent 75%)', WebkitMaskImage: 'radial-gradient(circle at center, black 45%, transparent 75%)' }} />
             <div className="relative z-10 flex flex-col">
               <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest mb-1">Author's Website</span>
               <span className="text-white font-bold text-sm">merybist.com</span>
