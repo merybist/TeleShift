@@ -5,6 +5,7 @@ from aiogram.types import CallbackQuery
 from locales import t
 from keyboards.inline import controls_kb, sound_menu_kb, confirm_kb, back_kb
 from utils.device import push_command, wait_for_result, log_action, RateLimitExceeded, DeviceOffline
+from utils.telegram import handle_offline_device
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -31,7 +32,7 @@ async def do_lock(call: CallbackQuery, device_id: str, lang: str = "en"):
     except RateLimitExceeded:
         await call.answer(t("rate_limit", lang), show_alert=True)
     except DeviceOffline:
-        await call.answer(t("device_offline", lang), show_alert=True)
+        await handle_offline_device(call, lang)
 
 
 # ── Sound ──────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ async def ctrl_sound(call: CallbackQuery, device_id: str, lang: str = "en"):
         await call.answer(t("rate_limit", lang), show_alert=True)
         return
     except DeviceOffline:
-        await call.answer(t("device_offline", lang), show_alert=True)
+        await handle_offline_device(call, lang)
         return
 
     result = await wait_for_result(cmd_id)
@@ -73,7 +74,7 @@ async def handle_sound(call: CallbackQuery, device_id: str, lang: str = "en"):
         await call.answer(t("rate_limit", lang), show_alert=True)
         return
     except DeviceOffline:
-        await call.answer(t("device_offline", lang), show_alert=True)
+        await handle_offline_device(call, lang)
         return
 
     await call.message.edit_text(t("sound_changing", lang))

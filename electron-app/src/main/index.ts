@@ -409,15 +409,15 @@ ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
   // Mark device as online
   setDeviceOnline(deviceId, true)
 
-  // Heartbeat mechanism: update last_seen_at every 30 seconds
+  // Heartbeat mechanism: update last_seen_at and is_online every 30 seconds
   if (heartbeatInterval) clearInterval(heartbeatInterval)
   heartbeatInterval = setInterval(async () => {
     try {
-      const data = { last_seen_at: new Date().toISOString() }
+      const data = { last_seen_at: new Date().toISOString(), is_online: true }
       if (dbMode === 'supabase' && supabase) {
         await supabase.from('devices').update(data).eq('id', deviceId)
       } else if (dbMode === 'pg' && pgClient) {
-        await pgClient.query('UPDATE devices SET last_seen_at = $1 WHERE id = $2', [data.last_seen_at, deviceId])
+        await pgClient.query('UPDATE devices SET last_seen_at = $1, is_online = $2 WHERE id = $3', [data.last_seen_at, data.is_online, deviceId])
       }
       console.log('[TeleShift][heartbeat] Status updated')
     } catch (e) {

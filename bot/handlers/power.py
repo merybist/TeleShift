@@ -3,6 +3,7 @@ from aiogram.types import CallbackQuery
 from locales import t
 from keyboards.inline import power_kb, confirm_kb, back_kb
 from utils.device import log_action, push_command, RateLimitExceeded, DeviceOffline
+from utils.telegram import handle_offline_device
 
 router = Router()
 
@@ -26,7 +27,7 @@ async def do_power_off(call: CallbackQuery, device_id: str, lang: str = "en"):
     except RateLimitExceeded:
         await call.answer(t("rate_limit", lang), show_alert=True)
     except DeviceOffline:
-        await call.answer(t("device_offline", lang), show_alert=True)
+        await handle_offline_device(call, lang)
 
 
 @router.callback_query(F.data == "power_reboot")
@@ -43,4 +44,4 @@ async def do_reboot(call: CallbackQuery, device_id: str, lang: str = "en"):
     except RateLimitExceeded:
         await call.answer(t("rate_limit", lang), show_alert=True)
     except DeviceOffline:
-        await call.answer(t("device_offline", lang), show_alert=True)
+        await handle_offline_device(call, lang)

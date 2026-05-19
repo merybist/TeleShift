@@ -64,7 +64,7 @@ def _check_device_rate_limit(device_id: str) -> None:
 
 async def is_device_online(device_id: str, mark_offline: bool = True) -> bool:
     dev = await db.select_one("devices", "is_online, last_seen_at", {"id": device_id})
-    if not dev or not dev.get("is_online"):
+    if not dev:
         return False
 
     last_seen_at = dev.get("last_seen_at")
@@ -78,8 +78,9 @@ async def is_device_online(device_id: str, mark_offline: bool = True) -> bool:
 
     online = (datetime.now(timezone.utc) - last_seen_at) < HEARTBEAT_TIMEOUT
 
-    if not online and mark_offline:
-        await db.update("devices", {"is_online": False}, {"id": device_id})
+    db_online = dev.get("is_online", False)
+    if online != db_online:
+        await db.update("devices", {"is_online": online}, {"id": device_id})
 
     return online
 
