@@ -20,6 +20,26 @@ function getMetadataFiles() {
     return files.filter(f => f === 'latest-mac.yml' || f === 'latest.yml');
 }
 
+function getMetadataVersion(filename) {
+    try {
+        const content = fs.readFileSync(path.join(DIST, filename), 'utf-8');
+        const match = content.match(/^version:\s*([^\s]+)/m);
+        return match ? match[1].trim() : null;
+    } catch {
+        return null;
+    }
+}
+
+function getReferencedFiles(metadataFilename) {
+    try {
+        const content = fs.readFileSync(path.join(DIST, metadataFilename), 'utf-8');
+        const matches = [...content.matchAll(/url:\s*([^\s]+)/g)];
+        return matches.map(m => m[1]);
+    } catch {
+        return [];
+    }
+}
+
 function extractVersion(filename) {
     const match = filename.match(/(\d{4}\.\d{1,2}\.\d{1,2})[.-](\d+)/);
     if (!match) return null;
@@ -36,13 +56,14 @@ async function selectArtifacts(artifacts) {
     });
 
     const answer = await new Promise(resolve =>
-        rl.question('\n→ Select (space-separated numbers, or "all"): ', resolve)
+        rl.question('\n→ Select (space-separated numbers, or "all" [default]): ', resolve)
     );
     rl.close();
 
-    if (answer.trim().toLowerCase() === 'all') return artifacts;
+    const choice = answer.trim() === '' ? 'all' : answer.trim().toLowerCase();
+    if (choice === 'all') return artifacts;
 
-    const indices = answer.trim().split(/\s+/).map(n => parseInt(n) - 1);
+    const indices = choice.split(/\s+/).map(n => parseInt(n) - 1);
     return indices.filter(i => i >= 0 && i < artifacts.length).map(i => artifacts[i]);
 }
 
@@ -70,11 +91,34 @@ async function run() {
     console.log(`\n📋 Release v${version.tag}`);
     console.log(`   Artifacts: ${selected.join(', ')}`);
 
-    const metadata = getMetadataFiles();
+    // Filter metadata files to only include those matching the release version
+    const metadata = getMetadataFiles().filter(f => {
+        const v = getMetadataVersion(f);
+        if (v === version.pkg) {
+            return true;
+        } else {
+            console.log(`   ⚠️  Skipping ${f} (version ${v} does not match release version ${version.pkg})`);
+            return false;
+        }
+    });
+
     if (metadata.length > 0) {
         console.log(`   Metadata:  ${metadata.join(', ')} (for auto-update)`);
+        
+        // Ensure all files referenced in the yml metadata files are also selected for upload
+        for (const metaFile of metadata) {
+            const refFiles = getReferencedFiles(metaFile);
+            for (const refFile of refFiles) {
+                if (!selected.includes(refFile)) {
+                    console.error(`\n❌ Error: ${metaFile} references "${refFile}", but it is not selected for upload!`);
+                    console.error(`   To avoid a broken auto-updater release, you must upload all referenced files.`);
+                    console.error(`   Please run the release script again and select all files or choose 'all'.`);
+                    process.exit(1);
+                }
+            }
+        }
     } else {
-        console.log('   ⚠️  No metadata files (latest-mac.yml / latest.yml) — auto-update won\'t work!');
+        console.log('   ⚠️  No metadata files (latest-mac.yml / latest.yml) match this version — auto-update won\'t work!');
     }
 
     // Git push
@@ -99,7 +143,7 @@ async function run() {
     console.log('\n🎯 Creating GitHub Release...');
     try {
         execSync(
-            `gh release create v${version.tag} ${allFiles} --title "v${version.tag}" --notes "TeleShift v${version.tag}"`,
+            `gh release create v${version.tag} ${allFiles} --title "v${version.tag}" --notes "TeleShift v${version.tag}" --clobber`,
             { stdio: 'inherit', cwd: path.join(__dirname, '..') }
         );
         console.log(`\n✅ v${version.tag} published. Auto-update will pick it up.`);
