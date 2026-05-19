@@ -44,6 +44,24 @@ def _check_rate_limit(user_id: int) -> None:
     _rate_limit_store[user_id].append(now)
 
 
+def _check_device_rate_limit(device_id: str) -> None:
+    now = time.time()
+    if device_id not in _device_rate_limit_store:
+        _device_rate_limit_store[device_id] = []
+
+    _device_rate_limit_store[device_id] = [
+        ts for ts in _device_rate_limit_store[device_id]
+        if now - ts < DEVICE_RATE_LIMIT_WINDOW
+    ]
+
+    if len(_device_rate_limit_store[device_id]) >= DEVICE_RATE_LIMIT_MAX:
+        raise RateLimitExceeded(
+            f"Device rate limit exceeded: max {DEVICE_RATE_LIMIT_MAX} commands per {DEVICE_RATE_LIMIT_WINDOW}s"
+        )
+
+    _device_rate_limit_store[device_id].append(now)
+
+
 async def is_device_online(device_id: str, mark_offline: bool = True) -> bool:
     dev = await db.select_one("devices", "is_online, last_seen_at", {"id": device_id})
     if not dev or not dev.get("is_online"):
