@@ -43,11 +43,11 @@
     "autoprefixer": "^10.4.19",
     "electron": "^39.8.5",
     "electron-builder": "^26.8.1",
-    "electron-vite": "^2.3.0",
+    "electron-vite": "^5.0.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
     "typescript": "^5.4.5",
-    "vite": "^5.2.11"
+    "vite": "^8.0.13"
   },
   "build": {
     "appId": "com.teleshift.app",
