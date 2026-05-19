@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { QrCode, LayoutGrid, Terminal, ShieldCheck, Github, Download, X, Bell } from 'lucide-react'
+import { QrCode, LayoutGrid, Terminal, ShieldCheck, Github, X, Bell } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import ConnectionPage from './pages/ConnectionPage'
 import AppsPage from './pages/AppsPage'
@@ -165,45 +165,36 @@ function UpdateModal() {
   const [update, setUpdate] = useState<any>(null)
   const [show, setShow] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [status, setStatus] = useState<'pending' | 'downloading' | 'ready'>('pending')
+  const [status, setStatus] = useState<'downloading' | 'ready'>('downloading')
 
   useEffect(() => {
-    checkForUpdate()
+    const removeAvailableListener = api.onUpdateAvailable((info) => {
+      const dismissed = localStorage.getItem('update_dismissed_version')
+      if (dismissed === info.version) return
+      setUpdate(info)
+      setShow(true)
+      setStatus('downloading')
+    })
 
     const removeProgressListener = api.onUpdateProgress((p) => {
       setProgress(Math.round(p))
-      setStatus('downloading')
     })
-    const removeReadyListener = api.onUpdateReady(() => {
+
+    const removeReadyListener = api.onUpdateReady((info) => {
+      setUpdate(info)
+      setShow(true)
       setStatus('ready')
+      api.showWindow()
     })
 
     return () => {
+      removeAvailableListener()
       removeProgressListener()
       removeReadyListener()
     }
   }, [])
 
-  async function checkForUpdate() {
-    try {
-      const result = await api.checkForUpdate()
-      if (!result) return
-
-      const dismissed = localStorage.getItem('update_dismissed_version')
-      if (dismissed === result.version) return
-
-      setUpdate(result)
-      setShow(true)
-      api.showWindow()
-    } catch {}
-  }
-
   if (!show || !update) return null
-
-  const handleStartDownload = () => {
-    api.startDownload()
-    setStatus('downloading')
-  }
 
   const handleInstall = () => {
     api.installUpdate()
@@ -223,8 +214,8 @@ function UpdateModal() {
         className="max-w-md w-full bg-[#0d1117] border border-gray-800 p-8 rounded-3xl shadow-2xl relative overflow-hidden"
       >
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-400" />
-        
-        {status === 'pending' && (
+
+        {status === 'downloading' && (
           <button onClick={handleLater} className="absolute top-4 right-4 p-2 text-gray-500 hover:text-white transition-colors">
             <X size={20} />
           </button>
@@ -236,52 +227,27 @@ function UpdateModal() {
           </div>
           <div>
             <h2 className="text-xl font-bold text-white">
-              {status === 'ready' ? 'Update Ready!' : 'New Update Available!'}
+              {status === 'ready' ? 'Update Ready!' : 'Updating...'}
             </h2>
             <p className="text-gray-400 text-sm">v{update.version}</p>
           </div>
         </div>
 
-        {status === 'pending' && (
-          <>
-            <div className="bg-gray-800/60 rounded-2xl p-4 mb-6 border border-gray-700/50 text-sm text-gray-300">
-              A new version of TeleShift is available. Would you like to update now?
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={handleStartDownload}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
-              >
-                <Download size={18} /> Update Now
-              </button>
-              <div className="flex gap-3">
-                <button onClick={handleLater} className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl transition-all">
-                  Later
-                </button>
-                <button onClick={handleNever} className="flex-1 py-3 bg-gray-800/50 hover:bg-gray-700/50 text-gray-500 rounded-xl transition-all text-xs">
-                  Don't remind me
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
         {status === 'downloading' && (
           <div className="py-4">
             <div className="flex justify-between text-sm mb-2">
-              <span className="text-gray-400">Downloading...</span>
+              <span className="text-gray-400">Downloading update...</span>
               <span className="text-blue-400 font-bold">{progress}%</span>
             </div>
             <div className="h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
-              <motion.div 
+              <motion.div
                 className="h-full bg-gradient-to-r from-blue-500 to-indigo-400"
                 initial={{ width: 0 }}
                 animate={{ width: `${progress}%` }}
               />
             </div>
             <p className="text-[10px] text-gray-500 mt-4 text-center">
-              Please don't close the app until download is complete
+              Update will install automatically on next restart
             </p>
           </div>
         )}
@@ -289,7 +255,7 @@ function UpdateModal() {
         {status === 'ready' && (
           <div className="flex flex-col gap-4">
             <div className="bg-green-500/10 border border-green-500/20 p-4 rounded-2xl text-green-400 text-sm text-center">
-              Update downloaded successfully. Restart the app to apply changes.
+              Update downloaded. Restart to apply.
             </div>
             <button
               onClick={handleInstall}
@@ -297,6 +263,14 @@ function UpdateModal() {
             >
               Install & Restart
             </button>
+            <div className="flex gap-3">
+              <button onClick={handleLater} className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl transition-all">
+                Later
+              </button>
+              <button onClick={handleNever} className="flex-1 py-3 bg-gray-800/50 hover:bg-gray-700/50 text-gray-500 rounded-xl transition-all text-xs">
+                Don't remind me
+              </button>
+            </div>
           </div>
         )}
       </motion.div>

@@ -1,4 +1,5 @@
 from aiogram import BaseMiddleware
+from aiogram.fsm.context import FSMContext
 from db import db
 from keyboards.inline import not_connected_kb
 
@@ -24,6 +25,10 @@ class AuthMiddleware(BaseMiddleware):
         data['lang'] = lang
 
         if getattr(event, 'text', '').startswith('/start') or getattr(event, 'data', '') in ['connect_info', 'enter_hash']:
+            return await handler(event, data)
+
+        state: FSMContext = data.get('state')
+        if state and await state.get_state():
             return await handler(event, data)
 
         if not is_connected:

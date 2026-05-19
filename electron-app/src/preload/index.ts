@@ -14,15 +14,19 @@ const electronAPI = {
 
   // ── Auto-update ──
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
-  startDownload: () => ipcRenderer.send('start-download'),
   installUpdate: () => ipcRenderer.send('install-update'),
+  onUpdateAvailable: (callback: (info: { version: string }) => void) => {
+    const listener = (_event: any, info: any) => callback(info)
+    ipcRenderer.on('update-available', listener)
+    return () => ipcRenderer.removeListener('update-available', listener)
+  },
   onUpdateProgress: (callback: (percent: number) => void) => {
     const listener = (_event: any, percent: number) => callback(percent)
     ipcRenderer.on('update-progress', listener)
     return () => ipcRenderer.removeListener('update-progress', listener)
   },
-  onUpdateReady: (callback: () => void) => {
-    const listener = () => callback()
+  onUpdateReady: (callback: (info: { version: string }) => void) => {
+    const listener = (_event: any, info: any) => callback(info)
     ipcRenderer.on('update-ready', listener)
     return () => ipcRenderer.removeListener('update-ready', listener)
   },

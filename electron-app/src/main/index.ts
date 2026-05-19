@@ -261,26 +261,43 @@ ipcMain.handle('set-launch-at-startup', (_event, openAtLogin: boolean) => {
 // Auto-Update Logic (via electron-updater)
 // ══════════════════════════════════════════════════════════════
 
-autoUpdater.autoDownload = false // We'll trigger it manually from UI for better UX
+autoUpdater.autoDownload = true
+autoUpdater.autoInstallOnAppQuit = true
+
+autoUpdater.on('update-available', (info) => {
+  console.log(`[TeleShift] Update available: v${info.version}`)
+  mainWindow?.webContents.send('update-available', { version: info.version })
+})
+
+autoUpdater.on('download-progress', (progressObj) => {
+  mainWindow?.webContents.send('update-progress', progressObj.percent)
+})
+
+autoUpdater.on('update-downloaded', (info) => {
+  console.log(`[TeleShift] Update downloaded: v${info.version}`)
+  mainWindow?.webContents.send('update-ready', { version: info.version })
+})
+
+autoUpdater.on('error', (err) => {
+  console.error('[TeleShift][auto-update]', err.message)
+})
+
+// Check on launch + every 4 hours
+app.whenReady().then(() => {
+  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 10_000)
+  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000)
+})
 
 ipcMain.handle('check-for-update', async () => {
   try {
     const result = await autoUpdater.checkForUpdates()
-    if (result && result.updateInfo) {
-      return {
-        version: result.updateInfo.version,
-        releaseNotes: result.updateInfo.releaseNotes
-      }
+    if (result?.updateInfo) {
+      return { version: result.updateInfo.version }
     }
     return null
   } catch (err) {
-    console.error('[TeleShift][update-check]', err)
     return null
   }
-})
-
-ipcMain.on('start-download', () => {
-  autoUpdater.downloadUpdate()
 })
 
 ipcMain.on('install-update', () => {
@@ -289,20 +306,13 @@ ipcMain.on('install-update', () => {
   setTimeout(() => app.exit(0), 1000)
 })
 
-autoUpdater.on('download-progress', (progressObj) => {
-  mainWindow?.webContents.send('update-progress', progressObj.percent)
-})
-
-autoUpdater.on('update-downloaded', () => {
-  mainWindow?.webContents.send('update-ready')
-})
-
 
 // ══════════════════════════════════════════════════════════════
 // Database initialization — supports both Supabase and raw PG
 // ══════════════════════════════════════════════════════════════
 let currentDeviceId: string | null = null
 let pollInterval: NodeJS.Timeout | null = null
+let heartbeatInterval: NodeJS.Timeout | null = null
 
 ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
   currentDeviceId = deviceId
@@ -349,14 +359,15 @@ ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
   // Mark device as online
   setDeviceOnline(deviceId, true)
 
-  // Heartbeat mechanism: update last_seen every 30 seconds
-  setInterval(async () => {
+  // Heartbeat mechanism: update last_seen_at every 30 seconds
+  if (heartbeatInterval) clearInterval(heartbeatInterval)
+  heartbeatInterval = setInterval(async () => {
     try {
-      const data = { last_seen: new Date().toISOString() }
+      const data = { last_seen_at: new Date().toISOString() }
       if (dbMode === 'supabase' && supabase) {
         await supabase.from('devices').update(data).eq('id', deviceId)
       } else if (dbMode === 'pg' && pgClient) {
-        await pgClient.query('UPDATE devices SET last_seen = $1 WHERE id = $2', [data.last_seen, deviceId])
+        await pgClient.query('UPDATE devices SET last_seen_at = $1 WHERE id = $2', [data.last_seen_at, deviceId])
       }
       console.log('[TeleShift][heartbeat] Status updated')
     } catch (e) {

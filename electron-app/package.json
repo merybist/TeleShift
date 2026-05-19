@@ -2,7 +2,7 @@
   "name": "TeleShift",
   "author": "merybist",
   "description": "Remote PC controller desktop via Telegram.",
-  "version": "2026.5.20-4",
+  "version": "2026.5.20-3",
   "main": "./out/main/index.js",
   "repository": {
     "type": "git",
@@ -10,11 +10,10 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
-    "clean": "node -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true });\"",
     "build": "electron-vite build",
-    "build:win": "node scripts/bump-version.js && npm run clean && npm run build && electron-builder --win",
-    "build:mac": "node scripts/bump-version.js && npm run clean && npm run build && electron-builder --mac",
-    "build:all": "node scripts/bump-version.js && npm run clean && npm run build && electron-builder --win --mac",
+    "build:win": "node scripts/bump-version.js && npm run build && electron-builder --win",
+    "build:mac": "node scripts/bump-version.js && npm run build && electron-builder --mac",
+    "build:all": "node scripts/bump-version.js && npm run build && electron-builder --win --mac",
     "release": "node scripts/release.js"
   },
   "dependencies": {
@@ -47,7 +46,7 @@
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
     "typescript": "^5.4.5",
-    "vite": "^8.0.13"
+    "vite": "^5.4.21"
   },
   "build": {
     "appId": "com.teleshift.app",
