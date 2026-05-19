@@ -15,11 +15,10 @@ declare global {
 
 const api = window.electronAPI
 
-const DATABASE_URL = import.meta.env.VITE_DATABASE_URL || ''
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
-export const usePg = !!DATABASE_URL
+export const usePg = import.meta.env.VITE_USE_PG === 'true'
 
 // Supabase client (only created in Supabase mode)
 let _supabase: SupabaseClient | null = null

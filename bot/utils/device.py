@@ -12,6 +12,10 @@ RATE_LIMIT_WINDOW = 5  # seconds
 HEARTBEAT_TIMEOUT = timedelta(seconds=60)
 
 _rate_limit_store: dict[int, list[float]] = {}
+_device_rate_limit_store: dict[str, list[float]] = {}
+
+DEVICE_RATE_LIMIT_MAX = 10
+DEVICE_RATE_LIMIT_WINDOW = 10
 
 
 class RateLimitExceeded(Exception):
@@ -68,6 +72,11 @@ async def push_command(device_id: str, command: str, payload: dict = None, user_
 
     if user_id is not None:
         _check_rate_limit(user_id)
+        conn = await db.select("connections", "id", {"device_id": device_id, "user_id": user_id, "is_active": True})
+        if not conn:
+            raise PermissionError("User does not own this device")
+
+    _check_device_rate_limit(device_id)
 
     if not await is_device_online(device_id):
         raise DeviceOffline("Device is offline")

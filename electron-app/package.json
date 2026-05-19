@@ -84,7 +84,13 @@
         }
       ],
       "icon": "resources/icon.png",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSScreenCaptureDescription": "TeleShift needs screen recording access to take screenshots remotely.",
+        "NSAppleEventsUsageDescription": "TeleShift needs automation access to control system functions like shutdown and volume."
+      }
     },
     "nsis": {
       "oneClick": true,
