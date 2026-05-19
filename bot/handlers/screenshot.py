@@ -6,6 +6,7 @@ from aiogram.types import CallbackQuery, URLInputFile, BufferedInputFile
 from locales import t
 from keyboards.inline import back_kb
 from utils.device import push_command, wait_for_result, log_action, RateLimitExceeded, DeviceOffline
+from utils.telegram import handle_offline_device
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from db import db
 
@@ -15,13 +16,17 @@ router = Router()
 
 @router.callback_query(F.data == "menu_screenshot")
 async def menu_screen(call: CallbackQuery, device_id: str, lang: str = "en"):
+    # Fetch quality from settings
+    settings = await db.select_one("settings", "screenshot_quality", {"device_id": device_id})
+    quality = settings.get("screenshot_quality", "high") if settings else "high"
+
     try:
         cmd_id = await push_command(device_id, "take_screenshot", payload={"quality": quality}, user_id=call.from_user.id)
     except RateLimitExceeded:
         await call.answer(t("rate_limit", lang), show_alert=True)
         return
     except DeviceOffline:
-        await call.answer(t("device_offline", lang), show_alert=True)
+        await handle_offline_device(call, lang)
         return
 
     await call.message.edit_text(t("screenshot_taking", lang))

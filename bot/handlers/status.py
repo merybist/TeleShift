@@ -5,6 +5,7 @@ from aiogram.types import CallbackQuery
 from locales import t
 from keyboards.inline import status_menu_kb, back_kb
 from utils.device import push_command, wait_for_result, RateLimitExceeded, DeviceOffline
+from utils.telegram import handle_offline_device
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -24,7 +25,7 @@ async def stat_all(call: CallbackQuery, device_id: str, lang: str = "en"):
         await call.answer(t("rate_limit", lang), show_alert=True)
         return
     except DeviceOffline:
-        await call.answer(t("device_offline", lang), show_alert=True)
+        await handle_offline_device(call, lang)
         return
 
     result = await wait_for_result(cmd_id)
