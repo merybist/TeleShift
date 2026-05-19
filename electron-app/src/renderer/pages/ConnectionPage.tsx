@@ -58,8 +58,8 @@ export default function ConnectionPage() {
     const sub = dbSubscribe(
       'connections_changes',
       'connections',
-      (payload) => setConnection(payload),
-      { filter: `device_id=eq.${internalId}` }
+      () => fetchConnection(),
+      { eventType: 'UPDATE', filter: `device_id=eq.${internalId}` }
     )
     return () => sub.unsubscribe()
   }, [internalId])

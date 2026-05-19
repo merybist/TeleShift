@@ -4,8 +4,9 @@ import { join } from 'path'
 import { createClient } from '@supabase/supabase-js'
 import WebSocket from 'ws'
 import { execFile, spawn } from 'child_process'
-import { existsSync, statSync } from 'fs'
+import { existsSync, statSync, writeFileSync, mkdirSync } from 'fs'
 import { randomBytes, createCipheriv } from 'crypto'
+import { homedir } from 'os'
 import si from 'systeminformation'
 import loudness from 'loudness'
 
@@ -67,13 +68,72 @@ function validateAppPath(filePath: string): boolean {
 }
 
 
+// ══════════════════════════════════════════════════════════════
+// macOS LaunchAgent — auto-start without code signing
+// ══════════════════════════════════════════════════════════════
+
+const PLIST_LABEL = 'com.teleshift.agent'
+
+function getLaunchAgentPath(): string {
+  return join(homedir(), 'Library', 'LaunchAgents', `${PLIST_LABEL}.plist`)
+}
+
+function setupAutoLaunch(): void {
+  if (process.platform !== 'darwin') {
+    app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true })
+    return
+  }
+
+  const plistPath = getLaunchAgentPath()
+  if (existsSync(plistPath)) return
+
+  const appPath = app.getPath('exe')
+  const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${PLIST_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${appPath}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>
+`
+
+  const dir = join(homedir(), 'Library', 'LaunchAgents')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  writeFileSync(plistPath, plistContent, 'utf-8')
+  console.log('[TeleShift] LaunchAgent created:', plistPath)
+}
+
+function removeAutoLaunch(): void {
+  if (process.platform !== 'darwin') {
+    app.setLoginItemSettings({ openAtLogin: false })
+    return
+  }
+
+  const plistPath = getLaunchAgentPath()
+  if (existsSync(plistPath)) {
+    require('fs').unlinkSync(plistPath)
+    console.log('[TeleShift] LaunchAgent removed:', plistPath)
+  }
+}
+
 function createWindow() {
   // Remove default menu bar (File, Edit, View...)
   Menu.setApplicationMenu(null)
 
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
+
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 600,
+    width,
+    height,
     show: false,
     autoHideMenuBar: true,
     icon: join(__dirname, '../../resources/icon.png'),
@@ -136,11 +196,12 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
 
-  // Start on boot
-  app.setLoginItemSettings({
-    openAtLogin: true,
-    openAsHidden: true
-  })
+  // Show window on first launch (no device configured yet)
+  // After connection is established, it will hide to tray
+  mainWindow?.show()
+
+  // Start on boot via LaunchAgent (works without code signing on macOS)
+  setupAutoLaunch()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -179,14 +240,18 @@ ipcMain.on('quit-app', () => {
 })
 
 ipcMain.handle('get-launch-at-startup', () => {
+  if (process.platform === 'darwin') {
+    return existsSync(getLaunchAgentPath())
+  }
   return app.getLoginItemSettings().openAtLogin
 })
 
 ipcMain.handle('set-launch-at-startup', (_event, openAtLogin: boolean) => {
-  app.setLoginItemSettings({
-    openAtLogin,
-    openAsHidden: true // Keep it stealthy on startup
-  })
+  if (openAtLogin) {
+    setupAutoLaunch()
+  } else {
+    removeAutoLaunch()
+  }
   console.log(`[TeleShift] Launch at startup set to: ${openAtLogin}`)
   return true
 })
@@ -220,7 +285,8 @@ ipcMain.on('start-download', () => {
 
 ipcMain.on('install-update', () => {
   isQuitting = true
-  autoUpdater.quitAndInstall()
+  autoUpdater.quitAndInstall(false, true)
+  setTimeout(() => app.exit(0), 1000)
 })
 
 autoUpdater.on('download-progress', (progressObj) => {
@@ -343,9 +409,10 @@ async function setDeviceOnline(deviceId: string, online: boolean) {
 }
 
 // Mark device offline on quit
-app.on('before-quit', async () => {
+app.on('before-quit', (event) => {
+  isQuitting = true
   if (currentDeviceId) {
-    await setDeviceOnline(currentDeviceId, false)
+    setDeviceOnline(currentDeviceId, false)
   }
 })
 
