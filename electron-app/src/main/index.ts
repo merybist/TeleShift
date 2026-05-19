@@ -84,8 +84,13 @@ function createWindow() {
     }
   })
 
-  // Start hidden — the app lives in the system tray
-  // Window only shows via tray menu or update notification
+  mainWindow.maximize()
+
+  // Show window on first launch, hide on subsequent (auto-start) launches
+  const isAutoLaunch = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAtLogin
+  if (!isAutoLaunch) {
+    mainWindow.show()
+  }
 
   // Prevent closing, hide instead
   mainWindow.on('close', (event) => {
@@ -104,10 +109,20 @@ function createWindow() {
 
 function createTray() {
   const iconPath = join(__dirname, '../../resources/icon.png')
-  const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+  let icon = nativeImage.createFromPath(iconPath)
+
+  if (icon.isEmpty()) {
+    console.error('[TeleShift] Tray icon not found at:', iconPath)
+    icon = nativeImage.createEmpty()
+  }
+
+  icon = icon.resize({ width: 16, height: 16 })
+  if (process.platform === 'darwin') {
+    icon.setTemplateImage(true)
+  }
   tray = new Tray(icon)
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Open Settings', click: () => mainWindow?.show() },
+    { label: 'Open Settings', click: () => { mainWindow?.maximize(); mainWindow?.show() } },
     { type: 'separator' },
     { label: 'Quit', click: () => {
         isQuitting = true
@@ -117,10 +132,14 @@ function createTray() {
   ])
   tray.setToolTip('TeleShift')
   tray.setContextMenu(contextMenu)
-  tray.on('double-click', () => mainWindow?.show())
+  tray.on('double-click', () => { mainWindow?.maximize(); mainWindow?.show() })
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin') {
+    app.dock.hide()
+  }
+
   // Content Security Policy
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -137,14 +156,22 @@ app.whenReady().then(() => {
   createTray()
 
   // Start on boot
-  app.setLoginItemSettings({
-    openAtLogin: true,
-    openAsHidden: true
-  })
+  if (process.platform === 'darwin') {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      openAsHidden: true,
+      name: 'TeleShift'
+    })
+  } else {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      openAsHidden: true
+    })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
-    else mainWindow?.show()
+    else { mainWindow?.maximize(); mainWindow?.show() }
   })
 })
 
@@ -169,6 +196,7 @@ ipcMain.handle('select-file', async () => {
 })
 
 ipcMain.on('show-window', () => {
+  mainWindow?.maximize()
   mainWindow?.show()
   mainWindow?.focus()
 })
@@ -231,21 +259,54 @@ autoUpdater.on('update-downloaded', () => {
   mainWindow?.webContents.send('update-ready')
 })
 
+// ══════════════════════════════════════════════════════════════
+// Device ID — secure storage via file in userData
+// ══════════════════════════════════════════════════════════════
+import { readFileSync, writeFileSync } from 'fs'
+import { join as pathJoin } from 'path'
+
+const deviceIdPath = pathJoin(app.getPath('userData'), 'device-id')
+
+ipcMain.handle('get-device-id', () => {
+  try {
+    return readFileSync(deviceIdPath, 'utf-8').trim()
+  } catch {
+    return null
+  }
+})
+
+ipcMain.handle('set-device-id', (_event, id: string) => {
+  writeFileSync(deviceIdPath, id, 'utf-8')
+  return true
+})
+
 
 // ══════════════════════════════════════════════════════════════
 // Database initialization — supports both Supabase and raw PG
 // ══════════════════════════════════════════════════════════════
 let currentDeviceId: string | null = null
 let pollInterval: NodeJS.Timeout | null = null
+let heartbeatInterval: NodeJS.Timeout | null = null
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
+  if (!UUID_REGEX.test(deviceId)) {
+    console.error('[TeleShift] Invalid deviceId format, rejecting init')
+    return
+  }
   currentDeviceId = deviceId
   console.log('[TeleShift] init-supabase called, deviceId:', deviceId, 'pgMode:', !!databaseUrl)
 
   if (databaseUrl) {
     // ── Raw PostgreSQL mode ──
     dbMode = 'pg'
-    initPostgres(databaseUrl, deviceId)
+    const pgConnectionString = process.env.DATABASE_URL || ''
+    if (!pgConnectionString) {
+      console.error('[TeleShift] DATABASE_URL not set in environment')
+      return
+    }
+    initPostgres(pgConnectionString, deviceId)
   } else {
     // ── Supabase mode ──
     dbMode = 'supabase'
@@ -278,13 +339,14 @@ ipcMain.on('init-supabase', (event, { url, key, deviceId, databaseUrl }) => {
   // Polling fallback (runs for both Supabase and PG modes)
   // Catches any commands that Realtime might miss
   if (pollInterval) clearInterval(pollInterval)
+  if (heartbeatInterval) clearInterval(heartbeatInterval)
   pollInterval = setInterval(() => pollPendingCommands(deviceId), 3000)
 
   // Mark device as online
   setDeviceOnline(deviceId, true)
 
   // Heartbeat mechanism: update last_seen every 30 seconds
-  setInterval(async () => {
+  heartbeatInterval = setInterval(async () => {
     try {
       const data = { last_seen: new Date().toISOString() }
       if (dbMode === 'supabase' && supabase) {
@@ -350,32 +412,43 @@ app.on('before-quit', async () => {
 })
 
 async function initPostgres(connectionString: string, deviceId: string) {
-  try {
-    const pg = require('pg')
-    pgClient = new pg.Client({ connectionString })
-    await pgClient.connect()
-    console.log('[PG] Connected to PostgreSQL')
+  const pg = require('pg')
 
-    await pgClient.query('LISTEN new_command')
-    console.log('[PG] Listening for new_command notifications')
+  async function connect() {
+    try {
+      pgClient = new pg.Client({ connectionString })
+      pgClient.on('error', (err: Error) => {
+        console.error('[PG] Connection lost:', err.message)
+        pgClient = null
+        setTimeout(connect, 5000)
+      })
+      await pgClient.connect()
+      console.log('[PG] Connected to PostgreSQL')
 
-    pgClient.on('notification', async (msg: any) => {
-      try {
-        const cmd = JSON.parse(msg.payload)
-        if (cmd.device_id === deviceId && cmd.status === 'pending') {
-          // Re-fetch full command data
-          const res = await pgClient.query('SELECT * FROM device_commands WHERE id = $1', [cmd.id])
-          if (res.rows.length > 0) {
-            await processCommand(res.rows[0])
+      await pgClient.query('LISTEN new_command')
+      console.log('[PG] Listening for new_command notifications')
+
+      pgClient.on('notification', async (msg: any) => {
+        try {
+          const cmd = JSON.parse(msg.payload)
+          if (cmd.device_id === deviceId && cmd.status === 'pending') {
+            const res = await pgClient.query('SELECT * FROM device_commands WHERE id = $1', [cmd.id])
+            if (res.rows.length > 0) {
+              await processCommand(res.rows[0])
+            }
           }
+        } catch (err) {
+          console.error('[TeleShift][pg-notification]', err)
         }
-      } catch (err) {
-        console.error('[TeleShift][pg-notification]', err)
-      }
-    })
-  } catch (err) {
-    console.error('[TeleShift][pg-connection]', err)
+      })
+    } catch (err) {
+      console.error('[PG] Connection failed, retrying in 5s...', err)
+      pgClient = null
+      setTimeout(connect, 5000)
+    }
   }
+
+  await connect()
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -754,17 +827,22 @@ async function processCommand(cmd: any) {
                 result = JSON.stringify({ volume: vol, muted })
                 break
             case 'show_message':
-                const msg = cmd.payload?.text || 'Message from TeleShift'
+                const rawMsg = (cmd.payload?.text || '').slice(0, 200)
+                const safeMsg = rawMsg.replace(/https?:\/\/\S+/gi, '[link removed]')
                 dialog.showMessageBox(mainWindow!, {
                     type: 'info',
-                    title: 'TeleShift Message',
-                    message: msg,
+                    title: 'TeleShift',
+                    message: `[Bot] ${safeMsg}`,
                     buttons: ['OK']
                 })
                 result = 'success'
                 break
             case 'set_volume':
-                const action = cmd.payload.action
+                const VALID_VOLUME_ACTIONS = ['up', 'down', 'mute']
+                const action = cmd.payload?.action
+                if (!VALID_VOLUME_ACTIONS.includes(action)) {
+                    throw new Error('Invalid volume action')
+                }
                 let currentVol = await loudness.getVolume()
                 if (action === 'up') await loudness.setVolume(Math.min(100, currentVol + 10))
                 else if (action === 'down') await loudness.setVolume(Math.max(0, currentVol - 10))
@@ -777,18 +855,25 @@ async function processCommand(cmd: any) {
                 result = JSON.stringify({ volume: newVol, muted: newMute })
                 break
             case 'take_screenshot':
+                const screenshotQuality = cmd.payload?.quality || 'high'
                 const primaryDisplay = screen.getPrimaryDisplay()
                 const { width, height } = primaryDisplay.size
 
+                const captureSize = screenshotQuality === 'low'
+                    ? { width: Math.round(width / 2), height: Math.round(height / 2) }
+                    : { width, height }
+
                 const sources = await desktopCapturer.getSources({
                     types: ['screen'],
-                    thumbnailSize: { width, height }
+                    thumbnailSize: captureSize
                 })
 
-                const source = sources[0] // Primary screen
+                const source = sources[0]
                 if (!source) throw new Error('No screen source found')
 
-                const imgBuffer = source.thumbnail.toPNG()
+                const imgBuffer = screenshotQuality === 'low'
+                    ? source.thumbnail.toJPEG(60)
+                    : source.thumbnail.toPNG()
 
                 // Encrypt screenshot with AES-256-GCM
                 const encKey = randomBytes(32)
@@ -847,6 +932,7 @@ async function processCommand(cmd: any) {
         await dbUpdate('device_commands', { status: 'completed', result }, { id: cmd.id })
     } catch (err: any) {
         console.error('[TeleShift][command-handler]', err)
-        await dbUpdate('device_commands', { status: 'error', result: err.message }, { id: cmd.id })
+        const safeError = (err.message || 'Unknown error').replace(/[/\\][\w.\-]+/g, '[path]').slice(0, 100)
+        await dbUpdate('device_commands', { status: 'error', result: safeError }, { id: cmd.id })
     }
 }

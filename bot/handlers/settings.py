@@ -41,14 +41,16 @@ async def toggle_quality(call: CallbackQuery, device_id: str):
 async def toggle_lang(call: CallbackQuery, device_id: str):
     rows = await db.select("settings", "language", {"device_id": device_id})
     if rows:
-        current = rows[0].get("language", "ua")
-        new_lang = "en" if current == "ua" else "ua"
+        current = rows[0].get("language", "en")
+        new_lang = "ua" if current == "en" else "en"
         await db.update("settings", {"language": new_lang}, {"device_id": device_id})
-    
+    else:
+        await db.insert("settings", {"device_id": device_id, "language": "ua"})
+
     settings_rows = await db.select("settings", "*", {"device_id": device_id})
     settings = settings_rows[0] if settings_rows else {}
     await call.message.edit_text("⚙️ Settings", reply_markup=settings_kb(settings))
-    await call.answer(f"Language changed to {settings.get('language').upper()}")
+    await call.answer(f"Language: {settings.get('language', 'en').upper()}")
 
 @router.callback_query(F.data == "set_online_notif")
 async def toggle_online_notif(call: CallbackQuery, device_id: str):

@@ -29,7 +29,7 @@ async def menu_launch(call: CallbackQuery, device_id: str):
     if result and result != "timeout" and not result.startswith("Error"):
         try:
             status_map = json.loads(result)
-        except:
+        except (json.JSONDecodeError, TypeError):
             pass
 
     await call.message.edit_text("🚀 App Launcher:", reply_markup=apps_kb(rows, status_map))

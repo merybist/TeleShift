@@ -50,6 +50,10 @@ const electronAPI = {
     return () => ipcRenderer.removeListener('db-notification', listener)
   },
 
+  // ── Device ID (secure storage) ──
+  getDeviceId: () => ipcRenderer.invoke('get-device-id'),
+  setDeviceId: (id: string) => ipcRenderer.invoke('set-device-id', id),
+
   // ── Supabase init ──
   initSupabase: (params: { url: string; key: string; deviceId: string; databaseUrl?: string }) =>
     ipcRenderer.send('init-supabase', params)

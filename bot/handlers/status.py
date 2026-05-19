@@ -81,7 +81,7 @@ async def stat_sound(call: CallbackQuery, device_id: str):
             vol = data.get("volume", 0)
             mute = data.get("muted", False)
             await call.message.edit_text(f"🔊 Volume: {vol}%", reply_markup=sound_menu_kb(vol, mute))
-        except:
+        except (json.JSONDecodeError, KeyError, TypeError):
             await call.message.edit_text("Data format error", reply_markup=back_kb())
 
 @router.callback_query(F.data.startswith("snd_"))
@@ -104,5 +104,5 @@ async def ctrl_sound(call: CallbackQuery, device_id: str):
             vol = data.get("volume", 0)
             mute = data.get("muted", False)
             await call.message.edit_text(f"🔊 Volume: {vol}%", reply_markup=sound_menu_kb(vol, mute))
-        except:
+        except (json.JSONDecodeError, KeyError, TypeError):
             await call.message.edit_text("Data format error", reply_markup=back_kb())

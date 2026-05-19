@@ -1,6 +1,13 @@
 .env
+.env.*
 __pycache__
 *.pyc
 .git
 .venv
 venv
+*.spec
+build/
+dist/
+tests/
+*.md
+.gitignore
