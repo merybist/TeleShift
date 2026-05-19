@@ -2,7 +2,7 @@
   "name": "TeleShift",
   "author": "merybist",
   "description": "Remote PC controller desktop via Telegram.",
-  "version": "2026.5.19-1",
+  "version": "2026.5.20-4",
   "main": "./out/main/index.js",
   "repository": {
     "type": "git",
@@ -10,12 +10,12 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
+    "clean": "node -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true });\"",
     "build": "electron-vite build",
-    "build:win": "npm run build && electron-builder --win",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:all": "npm run build && electron-builder --win --mac",
-    "deploy": "node scripts/release.js",
-    "publish-only": "node scripts/publish.js"
+    "build:win": "node scripts/bump-version.js && npm run clean && npm run build && electron-builder --win",
+    "build:mac": "node scripts/bump-version.js && npm run clean && npm run build && electron-builder --mac",
+    "build:all": "node scripts/bump-version.js && npm run clean && npm run build && electron-builder --win --mac",
+    "release": "node scripts/release.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",
@@ -69,9 +69,7 @@
         "nsis"
       ],
       "icon": "resources/icon.png",
-      "artifactName": "${productName} Setup ${version}.${ext}",
-      "certificateFile": "${env.WIN_CERT_PATH}",
-      "certificatePassword": "${env.WIN_CERT_PASSWORD}"
+      "artifactName": "${productName} Setup ${version}.${ext}"
     },
     "mac": {
       "target": [
