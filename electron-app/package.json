@@ -30,7 +30,7 @@
     "react-router-dom": "^6.23.0",
     "screenshot-desktop": "^1.15.0",
     "systeminformation": "^5.22.8",
-    "uuid": "^9.0.1",
+    "uuid": "^14.0.0",
     "ws": "^8.20.1"
   },
   "devDependencies": {
