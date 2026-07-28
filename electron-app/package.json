@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",
-    "electron-updater": "^6.8.3",
+    "electron-updater": "^6.8.9",
     "framer-motion": "^12.38.0",
     "loudness": "^0.4.1",
     "lucide-react": "^0.378.0",
@@ -41,7 +41,7 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
     "electron": "^39.8.5",
-    "electron-builder": "^26.8.1",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
